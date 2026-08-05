@@ -10,6 +10,8 @@ venv/
 # Data BESAR (diunduh oleh skrip, jangan disertakan)
 data/raster/
 *.tif
+data/external/
+data/tiles/
 
 # Data JADI / OUTPUT pipeline (dihasilkan oleh skrip — bukan bagian paket mentah)
 data/kalimantan.db

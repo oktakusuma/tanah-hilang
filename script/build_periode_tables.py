@@ -64,6 +64,15 @@ RENTANG = {"P1": "2009-2014", "P2": "2015-2019", "P3": "2020-2025", "Pra-2009": 
 ACCEL_VERDICTS = ("accelerated_post_iup", "loss_only_after_iup")
 YEAR_MIN, YEAR_MAX = 2001, 2025
 
+# Jendela varian BERSIH (Task F1, FASE F): loss dipotong perkiraan konversi
+# sawit (atribusi_sawit, varian tol2th/UTAMA), dibatasi tahun 2001-2021 —
+# Descals dkk. (2024) berhenti 2021, jadi 2022-2025 TAK BISA diperiksa thd
+# sawit sama sekali dan DIBUANG SELURUHNYA dari varian ini (bukan cuma
+# sawit-nya yg diabaikan; lihat FASE F di docs/superpowers/plans/2026-08-04-
+# descall-lapisan.md). "_bersih" = "bersih dari sawit", BUKAN singkatan lain.
+YEAR_MAX_BERSIH = 2021
+BERSIH_SUFFIX = "_bersih"
+
 
 # Kamus kolom (data dictionary). (nama_tabel, nama_kolom, deskripsi, rumus|None, sumber|None).
 # Kolom turunan/analisis diisi lengkap (rumus+sumber); kolom mentah/jelas-sendiri cukup deskripsi.
@@ -316,6 +325,132 @@ COLUMN_META = [
     ("wiup_match", "match_strategy", "Strategi pencocokan yang berhasil: T0_exact (SK identik persis), T1_norm_sk (SK dinormalkan), T2_fuzzy_name (kecocokan nama badan usaha), T3_digits (SK dibandingkan digit saja); NULL jika tak cocok.",
      None, "scripts/match_harder.py"),
 
+    # ── atribusi_sawit: kehilangan tutupan pohon per konsesi diatribusi ke sawit ──
+    # LAPISAN opsional (Descals dkk. 2024) — mengaudit apakah kehilangan di dalam
+    # batas WIUP (administratif) sebetulnya konversi kelapa sawit, bukan tambang.
+    ("atribusi_sawit", "kode_wiup", "Kode unik WIUP (fk ke wiup_geoportal; kunci utama tabel).", None, None),
+    ("atribusi_sawit", "loss_2001_2021_ha",
+     "Kehilangan tutupan pohon 2001-2021 di dalam konsesi yang BISA diperiksa "
+     "terhadap peta sawit Descals (peta berhenti di tahun 2021) — subset dari "
+     "wiup_loss.total_loss_ha, threshold kanopi & sumber piksel SAMA PERSIS.",
+     "Σ luas piksel hutan-2000 (kanopi≥30%) dgn lossyear 2001-2021",
+     "Hansen lossyear × treecover2000 × poligon WIUP (scripts/attribution_sawit.py)"),
+    ("atribusi_sawit", "loss_sawit_tol2th_ha",
+     "Kehilangan 2001-2021 yang piksel-nya juga menjadi sawit menurut Descals dkk. "
+     "(2024), varian TOLERAN (UTAMA/patokan): tahun tanam sawit (YoP) boleh "
+     "mendahului tahun kehilangan hingga 2 tahun — mengakomodasi RMSE deteksi "
+     "tahun tanam Descals (2,02 th perkebunan industri / 4,89 th rakyat).",
+     "Σ luas piksel dgn YoP ≥ tahun_loss − 2, dari subset loss_2001_2021_ha",
+     "Descals dkk. (2024) tahun-tanam sawit × Hansen lossyear (scripts/attribution_sawit.py)"),
+    ("atribusi_sawit", "loss_sawit_jeda5th_ha",
+     "Idem loss_sawit_tol2th_ha, varian PALING KETAT (BATAS BAWAH sensitivitas): tahun "
+     "tanam (YoP) tak boleh mendahului tahun kehilangan sama sekali, dan maksimal 5 "
+     "tahun sesudahnya — subset dari loss_sawit_tahunsama_ha (jeda5th ⊆ tahunsama ⊆ tol2th).",
+     "Σ luas piksel dgn tahun_loss ≤ YoP ≤ tahun_loss + 5",
+     "Descals dkk. (2024) × Hansen lossyear (scripts/attribution_sawit.py)"),
+    ("atribusi_sawit", "loss_sawit_tahunsama_ha",
+     "Idem loss_sawit_tol2th_ha, varian TANPA TOLERANSI MUNDUR (TENGAH): tahun tanam "
+     "(YoP) harus ≥ tahun kehilangan, tak boleh mendahului sama sekali (tanpa batas atas).",
+     "Σ luas piksel dgn YoP ≥ tahun_loss",
+     "Descals dkk. (2024) × Hansen lossyear (scripts/attribution_sawit.py)"),
+    ("atribusi_sawit", "loss_2022_2025_ha",
+     "Kehilangan tutupan pohon 2022-2025 — TAK BISA diperiksa terhadap sawit sama "
+     "sekali (Descals berhenti 2021); disimpan terpisah, BUKAN digabung diam-diam "
+     "ke penyebut pangsa sawit (persen_sawit).",
+     "Σ luas piksel hutan-2000 dgn lossyear 2022-2025", "Hansen lossyear (scripts/attribution_sawit.py)"),
+    ("atribusi_sawit", "n_tile_hansen",
+     "Jumlah tile Hansen (grid 10°×10°) yang disentuh konsesi ini (>1 bila konsesi "
+     "lintas-tile — 16/825 konsesi begini; ditangani via clip-per-tile, bukan dilewati).",
+     None, "scripts/attribution_sawit.py (_geo_common.pick_tile)"),
+
+    # ── klasifikasi_izin: vonis izin PERTAMA vs PERPANJANGAN per konsesi ────────
+    # LAPISAN opsional — mengaudit apakah iup_year benar berarti "tahun izin
+    # pertama terbit", dasar sahnya pengelompokan 3-periode.
+    ("klasifikasi_izin", "kode_wiup", "Kode unik WIUP (fk ke wiup_geoportal; kunci utama tabel).", None, None),
+    ("klasifikasi_izin", "kelas",
+     "Vonis apakah iup_year konsesi ini adalah izin PERTAMA atau PERPANJANGAN, tiga nilai: "
+     "PERPANJANGAN — payung 'bukan pemberian pertama'; bentuk persisnya (perpanjangan "
+     "keberapa? pendaftaran ulang?) tak terpastikan dari registri. "
+     "IZIN_PERTAMA — konsisten sebagai pemberian pertama; konsisten, bukan terbukti "
+     "(registri tak menyimpan sejarah izin, jadi tetap bisa saja perpanjangan yang "
+     "kebetulan berjangka panjang). "
+     "TAK_DINILAI — tak bisa divonis (tahap eksplorasi berjangka legal pendek, "
+     "tanggal berlaku/berakhir tak lengkap, atau jenis izin lain). "
+     "Lihat kolom `bukti` utk kekuatan tiap vonis (kecuali TAK_DINILAI).",
+     "vonis(): PKP2B/KK ber-iup_year≥2009 → PERPANJANGAN; lalu durasi SK Operasi "
+     "Produksi vs 20 th (UU 4/2009 Ps.47) → PERPANJANGAN/IZIN_PERTAMA; selainnya → TAK_DINILAI",
+     "wiup_master (jenis_izin, iup_year, nama_tahap_kegiatan, durasi_sk) — scripts/klasifikasi_perpanjangan.py"),
+    ("klasifikasi_izin", "bukti",
+     "Kekuatan bukti vonis `kelas` (NULL bila kelas=TAK_DINILAI), dua nilai: "
+     "KUAT — kemustahilan logis: jenis izin PKP2B/KK (sistem kontrak karya UU "
+     "11/1967) tapi iup_year≥2009, padahal sistem itu sudah BERHENTI terbit sejak "
+     "UU 4/2009, jadi tahun tercatat pasti bukan pemberian pertama (bukan dugaan, "
+     "melainkan kemustahilan logis). "
+     "INDIKASI — inferensi dari durasi SK Operasi Produksi dibandingkan jangka 20 "
+     "tahun pemberian pertama (UU 4/2009 Ps.47): petunjuk kuat, tapi tetap inferensi "
+     "hukum, bukan dokumen yang menyatakan langsung 'ini perpanjangan'.",
+     None, "scripts/klasifikasi_perpanjangan.py (vonis())"),
+    ("klasifikasi_izin", "dasar", "Penjelasan 1-2 kalimat alasan vonis `kelas`+`bukti` baris ini (teks bebas).",
+     None, "scripts/klasifikasi_perpanjangan.py (vonis())"),
+    ("klasifikasi_izin", "durasi_sk",
+     "Jangka waktu SK (tahun) = tahun tanggal_berakhir − tahun tanggal_berlaku "
+     "(MinerbaOne); NULL bila salah satu tanggal tak lengkap.",
+     "tahun(tanggal_berakhir) − tahun(tanggal_berlaku)", "wiup_master.tanggal_berlaku/tanggal_berakhir"),
+    ("klasifikasi_izin", "masa_berlaku_diwarisi",
+     "Bendera PELENGKAP (tidak menentukan `kelas`): 1 jika tahun mulai berlaku "
+     "(tanggal_berlaku) LEBIH AWAL dari iup_year — izin 'baru' yang membawa masa "
+     "berlaku pendahulunya.",
+     "1 jika tahun(tanggal_berlaku) < iup_year, else 0", "wiup_master.tanggal_berlaku, iup_year"),
+    ("klasifikasi_izin", "pra_izin_dominan",
+     "Bendera PELENGKAP (tidak menentukan `kelas`): 1 jika >50% kehilangan Hansen "
+     "konsesi ini terjadi SEBELUM iup_year — satelit menguatkan kegiatan sudah "
+     "berjalan lebih dulu. NULL bila konsesi tak punya kehilangan sama sekali.",
+     "1 jika loss_pre_iup_ha/(loss_pre_iup_ha+loss_post_iup_ha) > 0,5, else 0; NULL bila penyebut=0",
+     "wiup_master.loss_pre_iup_ha, loss_post_iup_ha"),
+
+    # ── periode_sawit: agregasi atribusi_sawit per periode kewenangan izin ──────
+    ("periode_sawit", "periode", "Kode periode kewenangan izin (P1/P2/P3/Pra-2009).", None, "periode(iup_year)"),
+    ("periode_sawit", "n_konsesi", "Jumlah konsesi periode yang punya data atribusi sawit (baris di atribusi_sawit).",
+     "count(kode_wiup) dari atribusi_sawit dengan to_periode(iup_year)=periode", "atribusi_sawit × wiup_geoportal.iup_year"),
+    ("periode_sawit", "loss_2001_2021_ha", "Total kehilangan tutupan pohon 2001-2021 (bisa diperiksa thd sawit) seluruh konsesi periode.",
+     "Σ atribusi_sawit.loss_2001_2021_ha per periode", "atribusi_sawit"),
+    ("periode_sawit", "loss_sawit_tol2th_ha",
+     "Total kehilangan 2001-2021 periode yang teratribusi ke sawit, varian TOLERAN (UTAMA/patokan, YoP ≥ tahun_loss−2).",
+     "Σ atribusi_sawit.loss_sawit_tol2th_ha per periode", "atribusi_sawit"),
+    ("periode_sawit", "loss_sawit_jeda5th_ha",
+     "Idem, varian PALING KETAT/batas bawah (tahun_loss ≤ YoP ≤ tahun_loss+5).",
+     "Σ atribusi_sawit.loss_sawit_jeda5th_ha per periode", "atribusi_sawit"),
+    ("periode_sawit", "loss_sawit_tahunsama_ha",
+     "Idem, varian tanpa toleransi mundur/tengah (YoP ≥ tahun_loss).",
+     "Σ atribusi_sawit.loss_sawit_tahunsama_ha per periode", "atribusi_sawit"),
+    ("periode_sawit", "loss_bersih_ha",
+     "Kehilangan 2001-2021 periode SETELAH dikurangi bagian teratribusi ke sawit "
+     "(varian tol2th) — perkiraan kehilangan 'murni non-sawit' periode itu.",
+     "loss_2001_2021_ha − loss_sawit_tol2th_ha", "kolom pada tabel ini"),
+    ("periode_sawit", "persen_sawit",
+     "Persen kehilangan periode yang teratribusi ke sawit (varian tol2th/UTAMA). "
+     "PENYEBUT: loss_2001_2021_ha (kehilangan 2001-2021 yang bisa diperiksa thd "
+     "sawit) — BUKAN luas konsesi, BUKAN hutan tahun 2000. NULL bila loss_2001_2021_ha periode itu = 0.",
+     "100 · loss_sawit_tol2th_ha / loss_2001_2021_ha", "kolom pada tabel ini"),
+    ("periode_sawit", "loss_2022_2025_ha",
+     "Total kehilangan 2022-2025 periode — TAK TERPERIKSA thd sawit sama sekali "
+     "(Descals berhenti 2021); disajikan terpisah, tidak masuk penyebut persen_sawit.",
+     "Σ atribusi_sawit.loss_2022_2025_ha per periode", "atribusi_sawit"),
+
+    # ── atribusi_sawit_yearly: pecahan PER TAHUN dari loss_sawit_tol2th_ha ──────
+    # LAPISAN opsional (Task F1/FASE F) — dasar rumus "loss bersih dari sawit"
+    # per tahun, dipakai periode_tahunan_aktif_bersih. Sparse spt wiup_loss_yearly
+    # (tahun tanpa loss-sawit tak disimpan, tersirat 0 via COALESCE pemakainya).
+    ("atribusi_sawit_yearly", "kode_wiup", "Kode unik WIUP (fk ke wiup_geoportal).", None, None),
+    ("atribusi_sawit_yearly", "year", "Tahun kalender kehilangan (2001-2021 — dibatasi jendela Descals; 2022-2025 tak disimpan di sini sama sekali).",
+     None, "band 'lossyear' Hansen GFC, dibatasi ≤2021"),
+    ("atribusi_sawit_yearly", "loss_sawit_tol2th_ha",
+     "Kehilangan tahun itu yang teratribusi ke sawit, varian TOLERAN/tol2th (UTAMA/patokan, "
+     "YoP ≥ tahun_loss−2) — SUM per kode_wiup atas seluruh tahun HARUS = atribusi_sawit.loss_sawit_tol2th_ha "
+     "(window sum), diverifikasi (ambang 0,5 ha) sebelum ditulis (lihat cek_konsistensi_tahunan()).",
+     "Σ luas piksel dgn YoP ≥ tahun_loss−2, dikelompokkan per tahun_loss",
+     "Descals dkk. (2024) × Hansen lossyear (scripts/attribution_sawit.py)"),
+
     # ── wiup_master (VIEW): gabungan wiup_geoportal × wiup_loss × wiup_temporal × wiup_match ──
     ("wiup_master", "kode_wiup", "Kode unik WIUP (kunci utama konsesi).", None, "wiup_geoportal.kode_wiup"),
     ("wiup_master", "nama_usaha", "Nama badan usaha pemegang izin.", None, "wiup_geoportal.nama_usaha"),
@@ -358,6 +493,42 @@ COLUMN_META = [
     ("wiup_master", "tanggal_penetapan", "Tanggal penetapan izin versi MinerbaOne (kosong jika db_match='no').", None, "perizinan.tanggal_penetapan"),
     ("wiup_master", "nama_tahap_kegiatan", "Tahap kegiatan izin versi MinerbaOne (kosong jika db_match='no').", None, "perizinan.nama_tahap_kegiatan"),
     ("wiup_master", "status_cnc", "Status Clean and Clear versi MinerbaOne (kosong jika db_match='no').", None, "perizinan.status_cnc"),
+    ("wiup_master", "loss_2001_2021_ha", "Kehilangan tutupan pohon 2001-2021 konsesi ini yang bisa diperiksa terhadap peta sawit Descals (kosong bila lapisan atribusi_sawit belum dibangun).",
+     None, "atribusi_sawit.loss_2001_2021_ha"),
+    ("wiup_master", "loss_sawit_tol2th_ha", "Kehilangan 2001-2021 konsesi ini yang teratribusi ke sawit, varian TOLERAN (UTAMA/patokan, YoP ≥ tahun_loss−2).",
+     None, "atribusi_sawit.loss_sawit_tol2th_ha"),
+    ("wiup_master", "loss_sawit_jeda5th_ha", "Idem, varian PALING KETAT/batas bawah (tahun_loss ≤ YoP ≤ tahun_loss+5).",
+     None, "atribusi_sawit.loss_sawit_jeda5th_ha"),
+    ("wiup_master", "loss_sawit_tahunsama_ha", "Idem, varian tanpa toleransi mundur/tengah (YoP ≥ tahun_loss).",
+     None, "atribusi_sawit.loss_sawit_tahunsama_ha"),
+    ("wiup_master", "loss_2022_2025_ha", "Kehilangan 2022-2025 konsesi ini — tak terperiksa thd sawit sama sekali (Descals berhenti 2021).",
+     None, "atribusi_sawit.loss_2022_2025_ha"),
+    ("wiup_master", "loss_bersih_ha", "Kehilangan 2001-2021 konsesi ini dikurangi bagian teratribusi ke sawit (varian tol2th).",
+     "loss_2001_2021_ha − loss_sawit_tol2th_ha", "view wiup_master (dihitung di CREATE VIEW)"),
+    ("wiup_master", "persen_sawit",
+     "Persen kehilangan konsesi ini yang teratribusi ke sawit (varian tol2th/UTAMA). "
+     "PENYEBUT: loss_2001_2021_ha konsesi ini — BUKAN luas konsesi (luas_sk), BUKAN "
+     "hutan 2000 (forest_2000_ha). NULL bila loss_2001_2021_ha=0.",
+     "100 · loss_sawit_tol2th_ha / loss_2001_2021_ha", "view wiup_master (dihitung di CREATE VIEW)"),
+    ("wiup_master", "kelas_izin",
+     "Alias klasifikasi_izin.kelas — vonis apakah iup_year konsesi ini izin PERTAMA "
+     "atau PERPANJANGAN, tiga nilai: PERPANJANGAN (payung 'bukan pemberian pertama'; "
+     "bentuk persis tak terpastikan dari registri), IZIN_PERTAMA (konsisten sebagai "
+     "pemberian pertama — konsisten, bukan terbukti), TAK_DINILAI (tak bisa divonis). "
+     "Lihat klasifikasi_izin.kelas utk penjelasan lengkap.",
+     None, "klasifikasi_izin.kelas"),
+    ("wiup_master", "bukti_izin",
+     "Alias klasifikasi_izin.bukti — kekuatan vonis kelas_izin: KUAT (kemustahilan "
+     "logis PKP2B/KK ber-iup_year≥2009) vs INDIKASI (inferensi dari durasi SK Operasi Produksi).",
+     None, "klasifikasi_izin.bukti"),
+    ("wiup_master", "dasar_kelas", "Alias klasifikasi_izin.dasar — penjelasan teks 1-2 kalimat vonis kelas_izin.",
+     None, "klasifikasi_izin.dasar"),
+    ("wiup_master", "durasi_sk", "Alias klasifikasi_izin.durasi_sk — jangka waktu SK (tahun) dari MinerbaOne.",
+     None, "klasifikasi_izin.durasi_sk"),
+    ("wiup_master", "masa_berlaku_diwarisi", "Alias klasifikasi_izin.masa_berlaku_diwarisi — bendera pelengkap, tak menentukan kelas_izin.",
+     None, "klasifikasi_izin.masa_berlaku_diwarisi"),
+    ("wiup_master", "pra_izin_dominan", "Alias klasifikasi_izin.pra_izin_dominan — bendera pelengkap, tak menentukan kelas_izin.",
+     None, "klasifikasi_izin.pra_izin_dominan"),
 
     # ── badan_usaha: registry perusahaan MinerbaOne (nasional, 7.572 baris) ────
     # Disalin apa adanya dari scrape publik MinerbaOne (scripts/_asisten/minerba_scraper.py),
@@ -447,6 +618,37 @@ COLUMN_META = [
     ("column_meta", "sumber", "Asal data kolom tsb (tabel/kolom sumber, atau nama dataset mentah).", None, None),
 ]
 
+# ── column_meta varian BERSIH (Task F1/FASE F): diturunkan PROGRAMATIK dari
+# baris kolom tabel asli (bukan copy-paste manual ~40 baris) — kolom & rumus
+# tiap tabel _bersih PERSIS sama dgn tabel asli (lihat build_periode_*()),
+# HANYA sumber datanya beda (loss_of/loss_lookup bersih, bukan wiup_loss/
+# wiup_loss_yearly mentah), jadi deskripsi cukup diberi catatan awalan yg
+# menegaskan jendela 2001-2021 + aturan tol2th + 2022-2025 di luar cakupan.
+_BERSIH_TABLES = ("periode_ringkasan", "periode_tahunan_aktif",
+                   "periode_komoditas", "periode_signifikansi")
+_BERSIH_CATATAN = (
+    "[Varian BERSIH] Sama dgn tabel aslinya, TAPI kolom loss di sini sudah "
+    "dipotong perkiraan konversi sawit (atribusi_sawit, varian tol2th/UTAMA: "
+    "YoP piksel ≥ tahun_loss−2) dan dibatasi jendela 2001-2021 — Descals dkk. "
+    "(2024) berhenti 2021, jadi tahun 2022-2025 TAK BISA diperiksa thd sawit "
+    "dan DIBUANG SELURUHNYA dari varian ini (bukan cuma sawit-nya yg "
+    "diabaikan). Konsesi tanpa baris atribusi_sawit dianggap sawit=0 (tetap "
+    "ikut dihitung, bukan dibuang). "
+)
+
+
+def _bersih_column_meta_rows():
+    rows = []
+    for tabel, kolom, deskripsi, rumus, sumber in COLUMN_META:
+        if tabel not in _BERSIH_TABLES:
+            continue
+        sumber_bersih = ("atribusi_sawit(_yearly) × " + sumber) if sumber else "atribusi_sawit(_yearly)"
+        rows.append((tabel + BERSIH_SUFFIX, kolom, _BERSIH_CATATAN + deskripsi, rumus, sumber_bersih))
+    return rows
+
+
+COLUMN_META = COLUMN_META + _bersih_column_meta_rows()
+
 
 def build_column_meta(con):
     """Bangun column_meta (kamus kolom); buang baris yatim (tabel/kolom tak wujud)."""
@@ -523,6 +725,262 @@ def since_permit_loss_series(concessions, loss_lookup, year_min=YEAR_MIN, year_m
     return series
 
 
+def tabel_ada_berisi(con, nama_tabel):
+    """True bila `nama_tabel` ADA sbg tabel real (bukan view) DAN berisi >=1 baris.
+
+    Guard utk tabel LAPISAN opsional (atribusi_sawit/klasifikasi_izin): tabel bisa
+    ADA sbg cangkang kosong (LAPISAN_SHELLS di build_combined_db.py, dibuat lebih
+    dulu agar wiup_master selalu valid) tapi BELUM diisi skrip lapisannya — guard
+    'ada di sqlite_master' saja tak cukup, harus dicek isinya juga.
+    """
+    row = con.execute(
+        "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?", (nama_tabel,)
+    ).fetchone()
+    if row is None:
+        return False
+    (n,) = con.execute(f'SELECT COUNT(*) FROM "{nama_tabel}"').fetchone()
+    return n > 0
+
+
+def build_periode_sawit(con):
+    """Agregasi atribusi_sawit x periode(iup_year) -> 1 baris/periode.
+
+    Pemanggil (main()) WAJIB pakai tabel_ada_berisi(con,'atribusi_sawit') sbg
+    guard sebelum memanggil fungsi ini — query di sini akan gagal (no such
+    table) kalau atribusi_sawit belum ada sama sekali.
+
+    Pengelompokan periode pakai to_periode() PYTHON (BUKAN CASE WHEN SQL):
+    iup_year kosong/di luar jendela 1998-2025 harus dibuang oleh to_periode(),
+    bukan diam-diam jatuh ke P3 (bug yg pernah terjadi pd periode_ringkasan).
+    """
+    rows = con.execute(
+        """SELECT g.iup_year, a.loss_2001_2021_ha, a.loss_sawit_tol2th_ha,
+                  a.loss_sawit_jeda5th_ha, a.loss_sawit_tahunsama_ha, a.loss_2022_2025_ha
+           FROM atribusi_sawit a
+           JOIN wiup_geoportal g ON g.kode_wiup = a.kode_wiup"""
+    ).fetchall()
+    by_per = {r: [] for r in PERIODES}
+    for iy, l2101, tol2, jeda5, tahunsama, l2225 in rows:
+        r = to_periode(iy)
+        if r is None:
+            continue
+        by_per[r].append((l2101, tol2, jeda5, tahunsama, l2225))
+
+    con.execute("DROP TABLE IF EXISTS periode_sawit")
+    con.execute(
+        """CREATE TABLE periode_sawit (
+            periode TEXT PRIMARY KEY, n_konsesi INTEGER,
+            loss_2001_2021_ha REAL, loss_sawit_tol2th_ha REAL,
+            loss_sawit_jeda5th_ha REAL, loss_sawit_tahunsama_ha REAL,
+            loss_bersih_ha REAL, persen_sawit REAL, loss_2022_2025_ha REAL)"""
+    )
+    for r in PERIODES:
+        items = by_per[r]
+
+        def total(idx):
+            vals = [x[idx] for x in items if x[idx] is not None]
+            return sum(vals)
+
+        l2101, tol2, jeda5, tahunsama, l2225 = (total(i) for i in range(5))
+        bersih = l2101 - tol2
+        persen = round(100 * tol2 / l2101, 2) if l2101 else None
+        con.execute(
+            "INSERT INTO periode_sawit VALUES (?,?,?,?,?,?,?,?,?)",
+            (r, len(items),
+             round(l2101, 2), round(tol2, 2), round(jeda5, 2), round(tahunsama, 2),
+             round(bersih, 2), persen, round(l2225, 2)),
+        )
+
+
+def build_periode_ringkasan(con, table_name, by_per, forest_of, loss_of):
+    """Bangun `table_name` (periode_ringkasan / periode_ringkasan_bersih).
+
+    `loss_of`: dict kode_wiup -> loss_ha dipakai SEBAGAI GANTI wiup_loss.total_loss_ha
+    (parameter Task F1 — DRY, jangan copy-paste builder tabel asli vs bersih).
+    Kalau kode_wiup TAK ADA di `loss_of`, dianggap "tak ada data" (DIBUANG dari
+    rata-rata/Pearson, PERSIS spt x[5] is None di versi lama) — beda dari
+    "ada tapi 0.0" (yg tetap terhitung). Pemanggil (main()) yg memutuskan mana
+    dari dua makna ini yg dipakai per konsesi lewat isi `loss_of`.
+    """
+    con.execute(f"DROP TABLE IF EXISTS {table_name}")
+    con.execute(
+        f"""CREATE TABLE {table_name} (
+            periode TEXT PRIMARY KEY, rentang_tahun TEXT, n INTEGER,
+            luas_total_ha REAL, luas_mean_ha REAL, luas_median_ha REAL,
+            loss_total_ha REAL, polygon_total_ha REAL, forest2000_total_ha REAL,
+            pct_poligon REAL,
+            rate_post_mean REAL, rate_post_median REAL, pct_akselerasi REAL,
+            r_luas_loss REAL, r_luas_ratepost REAL,
+            komposisi_otoritas TEXT)"""
+    )
+    for r in PERIODES:
+        rows = by_per[r]
+        luas = [x[3] for x in rows if x[3] is not None]
+        loss = [v for v in (loss_of.get(x[0]) for x in rows) if v is not None]
+        poly = [x[4] for x in rows if x[4] is not None]
+        ratep = [x[6] for x in rows if x[6] is not None]
+        forest = [forest_of.get(x[0]) for x in rows]
+        forest = [f for f in forest if f is not None]
+        accel = sum(1 for x in rows if x[7] in ACCEL_VERDICTS)
+        auth = {}
+        for x in rows:
+            auth[x[2]] = auth.get(x[2], 0) + 1
+        comp = ", ".join(f"{a}:{n}" for a, n in sorted(auth.items(), key=lambda z: -z[1]))
+        r_ll = pearson([(x[3], loss_of.get(x[0])) for x in rows])
+        r_lr = pearson([(x[3], x[6]) for x in rows])
+        con.execute(
+            f"INSERT INTO {table_name} VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            (r, RENTANG[r], len(rows),
+             round(sum(luas), 2),
+             round(sum(luas) / len(luas), 2) if luas else None,
+             round(statistics.median(luas), 2) if luas else None,
+             round(sum(loss), 2), round(sum(poly), 2), round(sum(forest), 2),
+             round(100 * sum(loss) / sum(poly), 2) if poly and sum(poly) else None,
+             round(sum(ratep) / len(ratep), 2) if ratep else None,
+             round(statistics.median(ratep), 2) if ratep else None,
+             round(100 * accel / len(rows), 2) if rows else None,
+             round(r_ll, 3) if r_ll is not None else None,
+             round(r_lr, 3) if r_lr is not None else None,
+             comp),
+        )
+
+
+def build_periode_tahunan_aktif(con, table_name, by_per, loss_lookup, forest_of, year_max):
+    """Bangun `table_name` (periode_tahunan_aktif / periode_tahunan_aktif_bersih).
+
+    `loss_lookup`: dict (kode_wiup, year) -> loss_ha dipakai SEBAGAI GANTI
+    wiup_loss_yearly mentah (parameter Task F1). `year_max`: batas atas deret
+    tahun (2025 utk tabel asli, 2021 utk bersih — Descals berhenti 2021,
+    tahun 2022-2025 DIBUANG SELURUHNYA dari varian bersih, bukan cuma
+    sawit-nya yg diabaikan). Konsesi ber-iup_year > year_max tak menyumbang
+    baris apa pun di varian bersih (start > year_max -> range kosong).
+    """
+    con.execute(f"DROP TABLE IF EXISTS {table_name}")
+    con.execute(
+        f"""CREATE TABLE {table_name} (
+            periode TEXT, year INTEGER, loss_ha REAL, n_konsesi_aktif INTEGER,
+            luas_aktif_ha REAL, forest_aktif_ha REAL, loss_kumulatif_ha REAL,
+            PRIMARY KEY (periode, year))"""
+    )
+    for r in PERIODES:
+        akt_loss = {}
+        akt_n = {}
+        akt_luas = {}
+        akt_forest = {}
+        for x in by_per[r]:
+            kode, iy, luas = x[0], x[1], x[3]
+            if iy is None:
+                continue
+            start = max(iy, YEAR_MIN)
+            forest = forest_of.get(kode) or 0
+            for y in range(start, year_max + 1):
+                akt_n[y] = akt_n.get(y, 0) + 1
+                akt_luas[y] = akt_luas.get(y, 0.0) + (luas or 0)
+                akt_forest[y] = akt_forest.get(y, 0.0) + forest
+                akt_loss[y] = akt_loss.get(y, 0.0) + loss_lookup.get((kode, y), 0)
+        kum = 0.0
+        for y in sorted(akt_n):
+            kum += akt_loss[y]
+            con.execute(f"INSERT INTO {table_name} VALUES (?,?,?,?,?,?,?)",
+                        (r, y, round(akt_loss[y], 2), akt_n[y],
+                         round(akt_luas[y], 2), round(akt_forest[y], 2), round(kum, 2)))
+
+
+def build_periode_komoditas(con, table_name, by_per, komod_of, loss_of):
+    """Bangun `table_name` (periode_komoditas / periode_komoditas_bersih).
+
+    `loss_of`: idem build_periode_ringkasan (parameter Task F1).
+    """
+    def kgroup(komoditas):
+        return "BATUBARA" if (komoditas or "").upper().startswith("BATUBARA") else "MINERAL LOGAM"
+
+    con.execute(f"DROP TABLE IF EXISTS {table_name}")
+    con.execute(
+        f"""CREATE TABLE {table_name} (
+            periode TEXT, grup_komoditas TEXT, n INTEGER,
+            luas_total_ha REAL, luas_median_ha REAL,
+            loss_total_ha REAL, pct_poligon REAL,
+            rate_post_median REAL, pct_akselerasi REAL,
+            PRIMARY KEY (periode, grup_komoditas))"""
+    )
+    for r in PERIODES:
+        groups = {}
+        for x in by_per[r]:
+            groups.setdefault(kgroup(komod_of.get(x[0])), []).append(x)
+        for gname, rows in sorted(groups.items()):
+            luas = [x[3] for x in rows if x[3] is not None]
+            loss = [v for v in (loss_of.get(x[0]) for x in rows) if v is not None]
+            poly = [x[4] for x in rows if x[4] is not None]
+            ratep = [x[6] for x in rows if x[6] is not None]
+            accel = sum(1 for x in rows if x[7] in ACCEL_VERDICTS)
+            con.execute(
+                f"INSERT INTO {table_name} VALUES (?,?,?,?,?,?,?,?,?)",
+                (r, gname, len(rows),
+                 round(sum(luas), 2),
+                 round(statistics.median(luas), 2) if luas else None,
+                 round(sum(loss), 2),
+                 round(100 * sum(loss) / sum(poly), 2) if poly and sum(poly) else None,
+                 round(statistics.median(ratep), 2) if ratep else None,
+                 round(100 * accel / len(rows), 2) if rows else None),
+            )
+
+
+def build_periode_signifikansi(con, table_name, by_per, loss_of):
+    """Bangun `table_name` (periode_signifikansi / periode_signifikansi_bersih).
+
+    HANYA metrik total_loss_ha yg memakai `loss_of` (parameter Task F1);
+    rate_post_ha_per_year & luas_sk tak bergantung sawit — identik antara
+    tabel asli & bersih (dites tegas di test_build_periode_tables.py).
+    """
+    con.execute(f"DROP TABLE IF EXISTS {table_name}")
+    con.execute(
+        f"""CREATE TABLE {table_name} (
+            metrik TEXT, uji TEXT, grup_a TEXT, grup_b TEXT,
+            n_a INTEGER, n_b INTEGER, statistik REAL, p_value REAL,
+            p_adjusted REAL, signifikan_005 INTEGER,
+            PRIMARY KEY (metrik, uji, grup_a, grup_b))"""
+    )
+    try:
+        from scipy import stats as sps
+
+        GETTERS = {  # metrik -> fungsi ambil nilai dari tuple konsesi `x`
+            "rate_post_ha_per_year": lambda x: x[6],
+            "total_loss_ha": lambda x: loss_of.get(x[0]),
+            "luas_sk": lambda x: x[3],
+        }
+        TRIO = ["P1", "P2", "P3"]
+        for mname, getter in GETTERS.items():
+            samples = {r: [v for x in by_per[r] if (v := getter(x)) is not None] for r in TRIO}
+            H, p = sps.kruskal(*[samples[r] for r in TRIO])
+            con.execute(
+                f"INSERT INTO {table_name} VALUES (?,?,?,?,?,?,?,?,?,?)",
+                (mname, "kruskal-wallis", "P1|P2|P3", "-",
+                 sum(len(samples[r]) for r in TRIO), 0,
+                 round(float(H), 3), float(p), float(p), 1 if p < 0.05 else 0),
+            )
+            pairs = [("P1", "P2"), ("P1", "P3"), ("P2", "P3")]
+            raw = []
+            for a, b in pairs:
+                U, pu = sps.mannwhitneyu(samples[a], samples[b], alternative="two-sided")
+                raw.append((a, b, float(U), float(pu)))
+            # Koreksi Holm: urutkan p naik, p_adj_i = max((m-i)·p_i, p_adj_{i-1}), cap 1.
+            order = sorted(range(3), key=lambda i: raw[i][3])
+            padj = [0.0] * 3
+            running = 0.0
+            for rank, i in enumerate(order):
+                running = max(running, min(1.0, (3 - rank) * raw[i][3]))
+                padj[i] = running
+            for (a, b, U, pu), pa in zip(raw, padj):
+                con.execute(
+                    f"INSERT INTO {table_name} VALUES (?,?,?,?,?,?,?,?,?,?)",
+                    (mname, "mann-whitney-u", a, b,
+                     len(samples[a]), len(samples[b]),
+                     round(U, 1), pu, pa, 1 if pa < 0.05 else 0),
+                )
+    except ImportError:
+        print(f"PERINGATAN: scipy tak tersedia — {table_name} dilewati (tabel kosong).")
+
+
 def existing_meta_rows(meta, table_names):
     """Buang baris provenance untuk tabel yang TIDAK ada di DB.
 
@@ -562,48 +1020,14 @@ def main() -> int:
     # Butuh forest_2000_ha juga untuk ringkasan → ambil terpisah (indeks kolom stabil).
     forest_of = dict(con.execute("SELECT kode_wiup, forest_2000_ha FROM wiup_loss"))
 
+    # loss_of: dict kode_wiup -> total_loss_ha, sumber ASLI (identik x[5] di
+    # tuple `konsesi`) — parameter Task F1 dilewatkan ke builder generik supaya
+    # tabel ASLI (loss_of=loss_of_asli) & _bersih (loss_of=loss_of_bersih di
+    # bawah, dibangun HANYA bila atribusi_sawit ada+berisi) berbagi 1 builder.
+    loss_of_asli = {x[0]: x[5] for x in konsesi}
+
     # ── 1. periode_ringkasan ───────────────────────────────────────────────────
-    con.execute("DROP TABLE IF EXISTS periode_ringkasan")
-    con.execute(
-        """CREATE TABLE periode_ringkasan (
-            periode TEXT PRIMARY KEY, rentang_tahun TEXT, n INTEGER,
-            luas_total_ha REAL, luas_mean_ha REAL, luas_median_ha REAL,
-            loss_total_ha REAL, polygon_total_ha REAL, forest2000_total_ha REAL,
-            pct_poligon REAL,
-            rate_post_mean REAL, rate_post_median REAL, pct_akselerasi REAL,
-            r_luas_loss REAL, r_luas_ratepost REAL,
-            komposisi_otoritas TEXT)"""
-    )
-    for r in PERIODES:
-        rows = by_per[r]
-        luas = [x[3] for x in rows if x[3] is not None]
-        loss = [x[5] for x in rows if x[5] is not None]
-        poly = [x[4] for x in rows if x[4] is not None]
-        ratep = [x[6] for x in rows if x[6] is not None]
-        forest = [forest_of.get(x[0]) for x in rows]
-        forest = [f for f in forest if f is not None]
-        accel = sum(1 for x in rows if x[7] in ACCEL_VERDICTS)
-        auth = {}
-        for x in rows:
-            auth[x[2]] = auth.get(x[2], 0) + 1
-        comp = ", ".join(f"{a}:{n}" for a, n in sorted(auth.items(), key=lambda z: -z[1]))
-        r_ll = pearson([(x[3], x[5]) for x in rows])
-        r_lr = pearson([(x[3], x[6]) for x in rows])
-        con.execute(
-            "INSERT INTO periode_ringkasan VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-            (r, RENTANG[r], len(rows),
-             round(sum(luas), 2),
-             round(sum(luas) / len(luas), 2) if luas else None,
-             round(statistics.median(luas), 2) if luas else None,
-             round(sum(loss), 2), round(sum(poly), 2), round(sum(forest), 2),
-             round(100 * sum(loss) / sum(poly), 2) if poly and sum(poly) else None,
-             round(sum(ratep) / len(ratep), 2) if ratep else None,
-             round(statistics.median(ratep), 2) if ratep else None,
-             round(100 * accel / len(rows), 2) if rows else None,
-             round(r_ll, 3) if r_ll is not None else None,
-             round(r_lr, 3) if r_lr is not None else None,
-             comp),
-        )
+    build_periode_ringkasan(con, "periode_ringkasan", by_per, forest_of, loss_of_asli)
 
     # ── 2. periode_deforestasi_tahunan ──────────────────────────────────────────
     # loss per (periode, tahun kalender) dari wiup_loss_yearly.
@@ -637,35 +1061,8 @@ def main() -> int:
     #   forest_aktif_ha   : Σ hutan-2000 di dalam izin aktif
     #   loss_ha           : loss tahun itu di izin aktif (flow)
     #   loss_kumulatif_ha : akumulasi loss pasca-izin s/d tahun itu
-    con.execute("DROP TABLE IF EXISTS periode_tahunan_aktif")
-    con.execute(
-        """CREATE TABLE periode_tahunan_aktif (
-            periode TEXT, year INTEGER, loss_ha REAL, n_konsesi_aktif INTEGER,
-            luas_aktif_ha REAL, forest_aktif_ha REAL, loss_kumulatif_ha REAL,
-            PRIMARY KEY (periode, year))"""
-    )
-    for r in PERIODES:
-        akt_loss = {}
-        akt_n = {}
-        akt_luas = {}
-        akt_forest = {}
-        for x in by_per[r]:
-            kode, iy, luas = x[0], x[1], x[3]
-            if iy is None:
-                continue
-            start = max(iy, YEAR_MIN)
-            forest = forest_of.get(kode) or 0
-            for y in range(start, YEAR_MAX + 1):
-                akt_n[y] = akt_n.get(y, 0) + 1
-                akt_luas[y] = akt_luas.get(y, 0.0) + (luas or 0)
-                akt_forest[y] = akt_forest.get(y, 0.0) + forest
-                akt_loss[y] = akt_loss.get(y, 0.0) + loss_lookup.get((kode, y), 0)
-        kum = 0.0
-        for y in sorted(akt_n):
-            kum += akt_loss[y]
-            con.execute("INSERT INTO periode_tahunan_aktif VALUES (?,?,?,?,?,?,?)",
-                        (r, y, round(akt_loss[y], 2), akt_n[y],
-                         round(akt_luas[y], 2), round(akt_forest[y], 2), round(kum, 2)))
+    build_periode_tahunan_aktif(con, "periode_tahunan_aktif", by_per, loss_lookup,
+                                 forest_of, YEAR_MAX)
 
     # ── 2c. penerbit_tahunan_aktif (lensa PENERBIT: Bupati/Gubernur/Menteri) ─
     # Akuntansi izin-aktif yang sama, tapi dikelompokkan menurut pejabat
@@ -763,39 +1160,8 @@ def main() -> int:
                         (r, rel, n, round(s, 2), round(s / n, 4) if n else None))
 
     # ── 5. periode_komoditas (kontrol komoditas: batubara vs mineral logam) ────
-    def kgroup(komoditas):
-        return "BATUBARA" if (komoditas or "").upper().startswith("BATUBARA") else "MINERAL LOGAM"
-
     komod_of = dict(con.execute("SELECT kode_wiup, komoditas FROM wiup_geoportal"))
-    con.execute("DROP TABLE IF EXISTS periode_komoditas")
-    con.execute(
-        """CREATE TABLE periode_komoditas (
-            periode TEXT, grup_komoditas TEXT, n INTEGER,
-            luas_total_ha REAL, luas_median_ha REAL,
-            loss_total_ha REAL, pct_poligon REAL,
-            rate_post_median REAL, pct_akselerasi REAL,
-            PRIMARY KEY (periode, grup_komoditas))"""
-    )
-    for r in PERIODES:
-        groups = {}
-        for x in by_per[r]:
-            groups.setdefault(kgroup(komod_of.get(x[0])), []).append(x)
-        for gname, rows in sorted(groups.items()):
-            luas = [x[3] for x in rows if x[3] is not None]
-            loss = [x[5] for x in rows if x[5] is not None]
-            poly = [x[4] for x in rows if x[4] is not None]
-            ratep = [x[6] for x in rows if x[6] is not None]
-            accel = sum(1 for x in rows if x[7] in ACCEL_VERDICTS)
-            con.execute(
-                "INSERT INTO periode_komoditas VALUES (?,?,?,?,?,?,?,?,?)",
-                (r, gname, len(rows),
-                 round(sum(luas), 2),
-                 round(statistics.median(luas), 2) if luas else None,
-                 round(sum(loss), 2),
-                 round(100 * sum(loss) / sum(poly), 2) if poly and sum(poly) else None,
-                 round(statistics.median(ratep), 2) if ratep else None,
-                 round(100 * accel / len(rows), 2) if rows else None),
-            )
+    build_periode_komoditas(con, "periode_komoditas", by_per, komod_of, loss_of_asli)
 
     # ── 6. periode_ukuran (distribusi ukuran → bukti "polarisasi") ─────────────
     # Persentil luas, share top-10% terbesar, dan koefisien Gini per periode.
@@ -844,53 +1210,58 @@ def main() -> int:
     # ── 7. periode_signifikansi (Kruskal-Wallis + pairwise Mann-Whitney) ───────
     # Non-parametrik karena distribusi sangat skew. Hanya R1/R2/R3 (Pra-2009 =
     # catatan kaki). Pairwise p dikoreksi Holm.
-    con.execute("DROP TABLE IF EXISTS periode_signifikansi")
-    con.execute(
-        """CREATE TABLE periode_signifikansi (
-            metrik TEXT, uji TEXT, grup_a TEXT, grup_b TEXT,
-            n_a INTEGER, n_b INTEGER, statistik REAL, p_value REAL,
-            p_adjusted REAL, signifikan_005 INTEGER,
-            PRIMARY KEY (metrik, uji, grup_a, grup_b))"""
-    )
-    try:
-        from scipy import stats as sps
+    build_periode_signifikansi(con, "periode_signifikansi", by_per, loss_of_asli)
 
-        METRICS = {  # metrik -> indeks kolom pada tuple konsesi
-            "rate_post_ha_per_year": 6,
-            "total_loss_ha": 5,
-            "luas_sk": 3,
+    # ── 7a. Varian BERSIH (Task F1, FASE F) — periode_ringkasan_bersih,
+    # periode_tahunan_aktif_bersih, periode_komoditas_bersih,
+    # periode_signifikansi_bersih + atribusi_sawit_yearly. Guard "ada+berisi"
+    # (pola tabel_ada_berisi(), sama spt periode_sawit di bawah): dibangun
+    # HANYA bila atribusi_sawit_yearly ADA & punya >=1 baris (ditulis skrip
+    # attribution_sawit.py sekaligus dgn atribusi_sawit dlm 1 commit, jadi
+    # cek satu tabel ini cukup mewakili keduanya).
+    has_atribusi_yearly = tabel_ada_berisi(con, "atribusi_sawit_yearly")
+    has_bersih = has_atribusi_yearly and tabel_ada_berisi(con, "atribusi_sawit")
+    if has_bersih:
+        # loss_of_bersih: SEMUA kode_wiup (825) dpt entri (default 0.0) supaya
+        # konsesi TANPA baris atribusi_sawit tetap TERHITUNG dgn sawit=0 (spec
+        # F1 butir c) — beda dgn loss_of_asli yg None-kan kode tanpa wiup_loss.
+        loss_of_bersih = {kode: 0.0 for (kode,) in con.execute("SELECT kode_wiup FROM wiup_geoportal")}
+        loss_of_bersih.update({
+            kode: (l2021 or 0.0) - (tol2 or 0.0)
+            for kode, l2021, tol2 in con.execute(
+                "SELECT kode_wiup, loss_2001_2021_ha, loss_sawit_tol2th_ha FROM atribusi_sawit")
+        })
+        # loss_lookup_bersih: (kode,year) -> loss_ha − sawit_tol2th, klem>=0,
+        # HANYA thn<=2021 (Descals berhenti 2021 -> 2022-2025 di luar cakupan).
+        atribusi_yearly_of = {
+            (kode, y): v for kode, y, v in con.execute(
+                "SELECT kode_wiup, year, loss_sawit_tol2th_ha FROM atribusi_sawit_yearly")
         }
-        TRIO = ["P1", "P2", "P3"]
-        for mname, idx in METRICS.items():
-            samples = {r: [x[idx] for x in by_per[r] if x[idx] is not None] for r in TRIO}
-            H, p = sps.kruskal(*[samples[r] for r in TRIO])
-            con.execute(
-                "INSERT INTO periode_signifikansi VALUES (?,?,?,?,?,?,?,?,?,?)",
-                (mname, "kruskal-wallis", "P1|P2|P3", "-",
-                 sum(len(samples[r]) for r in TRIO), 0,
-                 round(float(H), 3), float(p), float(p), 1 if p < 0.05 else 0),
-            )
-            pairs = [("P1", "P2"), ("P1", "P3"), ("P2", "P3")]
-            raw = []
-            for a, b in pairs:
-                U, pu = sps.mannwhitneyu(samples[a], samples[b], alternative="two-sided")
-                raw.append((a, b, float(U), float(pu)))
-            # Koreksi Holm: urutkan p naik, p_adj_i = max((m-i)·p_i, p_adj_{i-1}), cap 1.
-            order = sorted(range(3), key=lambda i: raw[i][3])
-            padj = [0.0] * 3
-            running = 0.0
-            for rank, i in enumerate(order):
-                running = max(running, min(1.0, (3 - rank) * raw[i][3]))
-                padj[i] = running
-            for (a, b, U, pu), pa in zip(raw, padj):
-                con.execute(
-                    "INSERT INTO periode_signifikansi VALUES (?,?,?,?,?,?,?,?,?,?)",
-                    (mname, "mann-whitney-u", a, b,
-                     len(samples[a]), len(samples[b]),
-                     round(U, 1), pu, pa, 1 if pa < 0.05 else 0),
-                )
-    except ImportError:
-        print("PERINGATAN: scipy tak tersedia — periode_signifikansi dilewati (tabel kosong).")
+        loss_lookup_bersih = {
+            (kode, y): max(0.0, base - (atribusi_yearly_of.get((kode, y), 0.0) or 0.0))
+            for (kode, y), base in loss_lookup.items() if y <= YEAR_MAX_BERSIH
+        }
+        build_periode_ringkasan(con, "periode_ringkasan" + BERSIH_SUFFIX, by_per,
+                                 forest_of, loss_of_bersih)
+        build_periode_tahunan_aktif(con, "periode_tahunan_aktif" + BERSIH_SUFFIX, by_per,
+                                     loss_lookup_bersih, forest_of, YEAR_MAX_BERSIH)
+        build_periode_komoditas(con, "periode_komoditas" + BERSIH_SUFFIX, by_per,
+                                 komod_of, loss_of_bersih)
+        build_periode_signifikansi(con, "periode_signifikansi" + BERSIH_SUFFIX, by_per,
+                                    loss_of_bersih)
+    else:
+        print("  periode_*_bersih: dilewati (atribusi_sawit_yearly tak ada/kosong)")
+
+    # ── 7b. periode_sawit (LAPISAN opsional — audit atribusi sawit x periode) ──
+    # Dibangun HANYA bila atribusi_sawit ada & berisi; kalau tak (mis. Descals
+    # blm di-fetch, atau rescrape ringan tanpa raster), dilewati bersih — TAK
+    # boleh mendaftarkan provenance utk tabel yg sebetulnya tak ditulis.
+    has_atribusi = tabel_ada_berisi(con, "atribusi_sawit")
+    has_klasifikasi = tabel_ada_berisi(con, "klasifikasi_izin")
+    if has_atribusi:
+        build_periode_sawit(con)
+    else:
+        print("  periode_sawit: dilewati (atribusi_sawit tak ada/kosong)")
 
     # ── 8. analysis_meta (PROVENANCE) ─────────────────────────────────────────
     con.execute("DROP TABLE IF EXISTS analysis_meta")
@@ -930,9 +1301,40 @@ def main() -> int:
         ("wiup_master",
          "VIEW siap-query: gabungan wiup_geoportal × wiup_loss × wiup_temporal × wiup_match (825 baris).",
          "join keempat tabel inti di atas via kode_wiup",
-         "Dipakai peta, tabel & detail konsesi. Catatan: kolom loss_2001_ha..loss_2025_ha "
-         "TIDAK ada di view ini — itu properti GeoJSON hasil pivot wiup_loss_yearly sisi server.",
+         "Dipakai peta, tabel & detail konsesi. Catatan: rincian loss per-tahun TIDAK ada "
+         "di view ini — dari wiup_loss_yearly, dipivot server ke /api/polygons (agregasi "
+         "tahunan Statistik) & /api/wiup/{kode}, serta ekspor GeoJSON QGIS (sync_geojson_from_db.py).",
          "scripts/build_combined_db.py"),
+        ("atribusi_sawit",
+         "Atribusi kehilangan tutupan pohon per konsesi ke konversi kelapa sawit "
+         "(peta tahun tanam Descals dkk. 2024) — LAPISAN opsional, audit batas administratif WIUP.",
+         "Hansen GFC v1.13 (lossyear, treecover2000) × Descals dkk. (2024) tahun-tanam sawit × poligon wiup_geoportal",
+         "1 baris/konsesi (825): loss_2001_2021_ha (bisa diperiksa thd sawit, threshold "
+         "kanopi & lintas-tile SAMA PERSIS dgn wiup_loss/batch_analyze.py) + 3 varian "
+         "loss_sawit_* (tol2th/jeda5th/tahunsama — beda jendela pencocokan piksel loss×tahun-tanam) "
+         "+ loss_2022_2025_ha (tak terperiksa, Descals berhenti 2021).",
+         "scripts/attribution_sawit.py"),
+        ("klasifikasi_izin",
+         "Vonis per konsesi: iup_year adalah izin PERTAMA atau PERPANJANGAN — LAPISAN "
+         "opsional, audit validitas pengelompokan 3-periode.",
+         "wiup_master(jenis_izin, iup_year, nama_tahap_kegiatan, tanggal_berlaku, "
+         "tanggal_berakhir, loss_pre_iup_ha, loss_post_iup_ha)",
+         "vonis() berurutan: PKP2B/KK ber-iup_year>=2009 -> PERPANJANGAN+KUAT (kemustahilan "
+         "logis, sistem kontrak karya UU 11/1967 berhenti sejak UU 4/2009); SK Operasi "
+         "Produksi durasi<20th (UU 4/2009 Ps.47) -> PERPANJANGAN+INDIKASI; durasi>=20th -> "
+         "IZIN_PERTAMA+INDIKASI; selainnya -> TAK_DINILAI. Plus 2 bendera pelengkap "
+         "(masa_berlaku_diwarisi, pra_izin_dominan) yg TIDAK menentukan kelas.",
+         "scripts/klasifikasi_perpanjangan.py"),
+        ("periode_sawit",
+         "Agregasi atribusi_sawit per periode kewenangan izin (P1/P2/P3/Pra-2009).",
+         "atribusi_sawit × wiup_geoportal.iup_year, dikelompokkan to_periode() (Python, "
+         "BUKAN CASE WHEN SQL — iup_year kosong tak boleh diam-diam masuk P3)",
+         "Σ tiap kolom atribusi_sawit per periode; loss_bersih_ha=loss_2001_2021_ha− "
+         "loss_sawit_tol2th_ha; persen_sawit=100·loss_sawit_tol2th_ha/loss_2001_2021_ha "
+         "(penyebut = kehilangan 2001-2021, BUKAN luas konsesi, BUKAN hutan 2000). "
+         "Dibangun HANYA bila atribusi_sawit ada & berisi (tabel_ada_berisi()); tak "
+         "didaftarkan di analysis_meta bila dilewati.",
+         "scripts/build_periode_tables.py"),
         ("exposure_kabupaten",
          "Skor paparan sentralisasi izin 2020 per kabupaten (untuk halaman Zona).",
          "stata/Data all v0.7.dta (panel penelitian) × kepadatan_penduduk (kab_normalized)",
@@ -1005,6 +1407,51 @@ def main() -> int:
          "timpang antar-periode (P1 ~12-17 th vs P3 ~1-6 th) — uji atas rate_post tak "
          "sepenuhnya apple-to-apple; total_loss & luas_sk tak terpengaruh.",
          "scripts/build_periode_tables.py"),
+        ("atribusi_sawit_yearly",
+         "Pecahan PER TAHUN dari atribusi_sawit.loss_sawit_tol2th_ha (varian tol2th/UTAMA) — "
+         "LAPISAN opsional, dasar rumus 'loss bersih dari sawit' per (periode,tahun).",
+         "Hansen GFC v1.13 (lossyear) × Descals dkk. (2024) tahun-tanam sawit × poligon wiup_geoportal, "
+         "jendela 2001-2021 (Descals berhenti 2021)",
+         "Σ luas piksel dgn YoP ≥ tahun_loss−2, dikelompokkan (kode_wiup, tahun_loss). Sparse "
+         "(tahun tanpa loss-sawit tak disimpan). Konsistensi SUM(per konsesi) vs "
+         "atribusi_sawit.loss_sawit_tol2th_ha (window) diverifikasi (ambang 0,5 ha) SEBELUM "
+         "atribusi_sawit MAUPUN tabel ini ditulis — galat membatalkan seluruh run. Dibangun "
+         "HANYA bila ada & berisi (guard periode_*_bersih di bawah).",
+         "scripts/attribution_sawit.py"),
+        ("periode_ringkasan" + BERSIH_SUFFIX,
+         "Varian BERSIH periode_ringkasan: loss dipotong perkiraan konversi sawit, jendela 2001-2021.",
+         "periode_ringkasan (skema identik) + atribusi_sawit(_yearly)",
+         "Sama dgn periode_ringkasan, TAPI loss_total_ha per konsesi = loss_2001_2021_ha − "
+         "loss_sawit_tol2th_ha (atribusi_sawit, varian tol2th/UTAMA); konsesi tanpa baris "
+         "atribusi_sawit dianggap sawit=0 (tetap ikut, bukan dibuang). Tahun 2022-2025 DI LUAR "
+         "cakupan varian ini (Descals berhenti 2021). Kolom tak-terkait loss (rate_post, "
+         "pct_akselerasi, komposisi_otoritas, dst.) IDENTIK dgn tabel asli. Dibangun HANYA bila "
+         "atribusi_sawit_yearly ada & berisi (tabel_ada_berisi()).",
+         "scripts/build_periode_tables.py"),
+        ("periode_tahunan_aktif" + BERSIH_SUFFIX,
+         "Varian BERSIH periode_tahunan_aktif: deret since-permit dgn loss dipotong sawit, DIBATASI tahun ≤2021.",
+         "periode_tahunan_aktif (skema identik) + atribusi_sawit_yearly",
+         "Sama dgn periode_tahunan_aktif, TAPI loss_ha tahun itu = wiup_loss_yearly.loss_ha − "
+         "atribusi_sawit_yearly.loss_sawit_tol2th_ha (COALESCE 0 bila tak ada baris), diklem "
+         "≥0. Deret BERHENTI di tahun 2021 (bukan 2025) — Descals tak bisa memeriksa 2022-2025 "
+         "sama sekali, jadi tahun itu DIBUANG SELURUHNYA (bukan cuma sawitnya diabaikan). "
+         "Dibangun HANYA bila atribusi_sawit_yearly ada & berisi.",
+         "scripts/build_periode_tables.py"),
+        ("periode_komoditas" + BERSIH_SUFFIX,
+         "Varian BERSIH periode_komoditas: kontrol komoditas dgn loss dipotong sawit, jendela 2001-2021.",
+         "periode_komoditas (skema identik) + atribusi_sawit",
+         "Sama dgn periode_komoditas, TAPI loss_total_ha = loss_2001_2021_ha − loss_sawit_tol2th_ha "
+         "per konsesi (idem periode_ringkasan_bersih). Dibangun HANYA bila atribusi_sawit_yearly "
+         "ada & berisi.",
+         "scripts/build_periode_tables.py"),
+        ("periode_signifikansi" + BERSIH_SUFFIX,
+         "Varian BERSIH periode_signifikansi: uji beda antar-periode dgn metrik total_loss_ha dipotong sawit.",
+         "periode_signifikansi (skema identik) + atribusi_sawit",
+         "Sama dgn periode_signifikansi, TAPI metrik total_loss_ha memakai loss_2001_2021_ha − "
+         "loss_sawit_tol2th_ha per konsesi; metrik rate_post_ha_per_year & luas_sk TAK berubah "
+         "(tak bergantung sawit) — nilainya identik dgn tabel asli. Dibangun HANYA bila "
+         "atribusi_sawit_yearly ada & berisi.",
+         "scripts/build_periode_tables.py"),
         ("column_meta",
          "Kamus kolom: arti + rumus + sumber tiap kolom (untuk halaman Database).",
          "ditulis manual di build_periode_tables.py (COLUMN_META), divalidasi anti-yatim",
@@ -1021,6 +1468,20 @@ def main() -> int:
     # Hanya catat provenance tabel yang benar-benar ada (mis. exposure_kabupaten
     # absen saat rebuild bundel publik tanpa .dta) — registry tak boleh berbohong.
     existing = {r[0] for r in con.execute("SELECT name FROM sqlite_master WHERE type IN ('table','view')")}
+    # atribusi_sawit/klasifikasi_izin bisa ADA sbg cangkang kosong (LAPISAN_SHELLS)
+    # tapi belum diisi — snapshot sqlite_master di atas tak membedakan "ada" dari
+    # "ada & berisi"; buang keduanya (dan periode_sawit yg bergantung padanya)
+    # dari registry provenance memakai guard tabel_ada_berisi() yg sudah dihitung
+    # di atas (has_atribusi/has_klasifikasi), bukan cek keberadaan mentah.
+    if not has_atribusi:
+        existing -= {"atribusi_sawit", "periode_sawit"}
+    if not has_klasifikasi:
+        existing -= {"klasifikasi_izin"}
+    if not has_atribusi_yearly:
+        existing -= {"atribusi_sawit_yearly"}
+    if not has_bersih:
+        existing -= {"periode_ringkasan" + BERSIH_SUFFIX, "periode_tahunan_aktif" + BERSIH_SUFFIX,
+                     "periode_komoditas" + BERSIH_SUFFIX, "periode_signifikansi" + BERSIH_SUFFIX}
     con.executemany("INSERT INTO analysis_meta VALUES (?,?,?,?,?)",
                     existing_meta_rows(meta, existing))
 

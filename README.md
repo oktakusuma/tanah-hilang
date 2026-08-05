@@ -162,6 +162,49 @@ Mann–Whitney (Holm).
 
 ---
 
+## 3a. Lapisan tambahan: atribusi sawit (Descals) + klasifikasi izin
+
+Dua uji tambahan di atas basis data default (langkah 7). Keduanya *opsional*
+dalam arti tidak mengubah angka utama (1.603.251 ha), tapi memperkaya
+interpretasinya:
+
+- **Atribusi ke konversi sawit** — sebagian kehilangan tutupan pohon di dalam
+  batas WIUP bisa jadi sebenarnya konversi ke kelapa sawit, bukan pembukaan
+  tambang. Diuji dengan peta tahun-tanam sawit Descals dkk. (2024)
+  ("Global mapping of oil palm planting year from 1990 to 2021", *Earth System
+  Science Data* 16:5111-5129, doi:10.5194/essd-16-5111-2024). Data raster:
+  Zenodo doi:10.5281/zenodo.13379129 (v1.2), lisensi **CC-BY-4.0** (atribusi
+  saja, tanpa ShareAlike). Cakupan tahun tanam 1990–2021.
+- **Klasifikasi izin pertama vs perpanjangan** — menguji apakah `iup_year`
+  (dasar pengelompokan 3 periode kewenangan) benar-benar berarti "tahun izin
+  pertama terbit", memakai data registri sendiri (jenis izin, durasi SK) —
+  tanpa sumber luar.
+
+**Prasyarat**: `rasterio` + `numpy` — sudah termasuk daftar dependensi dasar di
+§2, tidak perlu instalasi tambahan.
+
+**Urutan menjalankan** (setelah langkah 7 — `data/kalimantan.db` default sudah ada):
+```bash
+python script/fetch_descals.py               # unduh raster Descals (Zenodo, ~146 MB) ke data/external/descals/
+python script/attribution_sawit.py --db data/kalimantan.db     # -> tabel atribusi_sawit + atribusi_sawit_yearly
+python script/klasifikasi_perpanjangan.py --db data/kalimantan.db  # -> tabel klasifikasi_izin
+python script/gen_descals_tiles.py            # -> data/tiles/descals/*.png (tile XYZ, untuk peta web)
+python script/build_periode_tables.py --db data/kalimantan.db  # bangun ulang tabel periode_* (varian *_bersih dari sawit + analysis_meta/column_meta)
+```
+
+> `build_periode_tables.py` dijalankan **terakhir** — ia yang menulis provenansi
+> (`analysis_meta`/`column_meta`) untuk seluruh lapisan, termasuk `atribusi_sawit`
+> dan `klasifikasi_izin`. `gen_descals_tiles.py` meng-`import` `DESCALS_DIR` dari
+> `attribution_sawit.py` (harus berada di folder `script/` yang sama), sehingga
+> harus dijalankan setelah `fetch_descals.py`, urutan sebelum/sesudah
+> `attribution_sawit.py` sendiri tidak masalah.
+
+**Output tambahan** (tidak disertakan dalam paket, dihasilkan saat pipeline
+dijalankan): `data/external/descals/` (raster mentah Descals), `data/tiles/descals/`
+(tile PNG hasil render). Keduanya sudah masuk `.gitignore`.
+
+---
+
 ## 4. Dua versi hasil (kenapa?)
 
 Layer Geoportal `WIUP_Publish` memuat **semua** WIUP, termasuk **galian C /
@@ -210,6 +253,17 @@ antimoni, intan). Sisanya (pasir/batu/tanah/kuarsa) hanya ada di versi lengkap.
 | `periode_signifikansi` | Kruskal–Wallis + Mann–Whitney (Holm) antar P1/P2/P3 |
 | `analysis_meta` | **provenance** semua tabel (sumber, metode, skrip) |
 | `column_meta` | **kamus kolom**: arti + rumus + sumber tiap kolom (semua tabel/view) — untuk tab Skema halaman Database |
+
+**Tabel lapisan tambahan** (§3a; cangkangnya dibuat di langkah 5 lewat
+`LAPISAN_SHELLS`, diisi oleh `attribution_sawit.py` / `klasifikasi_perpanjangan.py`
+— urutan langkah pipeline tak menentukan, `wiup_master` tetap valid walau
+lapisan belum diisi):
+
+| Tabel | Isi |
+|---|---|
+| `atribusi_sawit` | per konsesi (825 baris): pecahan loss yang beririsan dgn tahun-tanam sawit Descals (3 varian jendela toleransi) |
+| `atribusi_sawit_yearly` | pecahan `atribusi_sawit` per (kode_wiup, tahun) — dasar varian `periode_*_bersih` |
+| `klasifikasi_izin` | per konsesi: vonis IZIN_PERTAMA / PERPANJANGAN / TAK_DINILAI + kekuatan bukti |
 
 Asal-usul tiap tabel analisis dapat dilacak langsung:
 ```bash

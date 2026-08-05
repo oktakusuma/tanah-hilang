@@ -91,6 +91,34 @@ def to_int(v, default=None):
     return int(n) if n is not None else default
 
 
+# ---- Lapisan (cangkang) — dibuat di build_combined_db, DIISI oleh skrip lain
+# (attribution_sawit.py / klasifikasi_izin — Task 4) sehingga urutan langkah
+# pipeline tak menentukan: view wiup_master selalu valid walau lapisan belum
+# diisi (LEFT JOIN ke tabel kosong -> NULL, bukan error). `IF NOT EXISTS`
+# supaya rerun tak menimpa data yang sudah ditulis skrip lapisan.
+LAPISAN_SHELLS = """
+CREATE TABLE IF NOT EXISTS atribusi_sawit (
+  kode_wiup                TEXT PRIMARY KEY REFERENCES wiup_geoportal(kode_wiup),
+  loss_2001_2021_ha        REAL,
+  loss_sawit_tol2th_ha     REAL,
+  loss_sawit_jeda5th_ha    REAL,
+  loss_sawit_tahunsama_ha  REAL,
+  loss_2022_2025_ha        REAL,
+  n_tile_hansen            INTEGER
+);
+
+CREATE TABLE IF NOT EXISTS klasifikasi_izin (
+  kode_wiup              TEXT PRIMARY KEY,
+  kelas                  TEXT NOT NULL,
+  bukti                  TEXT,
+  dasar                  TEXT NOT NULL,
+  durasi_sk              INTEGER,
+  masa_berlaku_diwarisi  INTEGER NOT NULL,
+  pra_izin_dominan       INTEGER
+);
+"""
+
+
 # ---- Build steps ----
 
 def step_copy_minerba(conn, src_path):
@@ -498,9 +526,12 @@ def step_indexes(conn):
 
 
 def step_master_view(conn):
-    """Create wiup_master VIEW joining all relevant tables."""
+    """Create wiup_master VIEW joining all relevant tables (termasuk lapisan
+    atribusi_sawit/klasifikasi_izin). Satu-satunya sumber definisi view —
+    dipanggil dari main() (build penuh) maupun refresh_view() (--refresh-view)."""
     print(f"\n[7/7] Creating wiup_master view", file=sys.stderr)
     cur = conn.cursor()
+    cur.executescript(LAPISAN_SHELLS)
     cur.execute("DROP VIEW IF EXISTS wiup_master")
     cur.execute("""
         CREATE VIEW wiup_master AS
@@ -544,16 +575,38 @@ def step_master_view(conn):
             p.tanggal_berakhir,
             p.tanggal_penetapan,
             p.nama_tahap_kegiatan,
-            p.status_cnc
+            p.status_cnc,
+            s.loss_2001_2021_ha, s.loss_sawit_tol2th_ha, s.loss_sawit_jeda5th_ha,
+            s.loss_sawit_tahunsama_ha, s.loss_2022_2025_ha,
+            ROUND(s.loss_2001_2021_ha - s.loss_sawit_tol2th_ha, 2)          AS loss_bersih_ha,
+            CASE WHEN s.loss_2001_2021_ha > 0
+                 THEN ROUND(100.0 * s.loss_sawit_tol2th_ha / s.loss_2001_2021_ha, 2)
+            END                                                              AS persen_sawit,
+            z.kelas  AS kelas_izin, z.bukti AS bukti_izin, z.dasar AS dasar_kelas,
+            z.durasi_sk, z.masa_berlaku_diwarisi, z.pra_izin_dominan
         FROM wiup_geoportal g
         LEFT JOIN wiup_loss l ON l.kode_wiup = g.kode_wiup
         LEFT JOIN wiup_temporal t ON t.kode_wiup = g.kode_wiup
         LEFT JOIN wiup_match m ON m.kode_wiup = g.kode_wiup
         LEFT JOIN badan_usaha b ON b.id_badan_usaha = m.id_badan_usaha
         LEFT JOIN perizinan p ON p.id_perizinan = m.id_perizinan
+        LEFT JOIN atribusi_sawit  s ON s.kode_wiup = g.kode_wiup
+        LEFT JOIN klasifikasi_izin z ON z.kode_wiup = g.kode_wiup
     """)
     conn.commit()
     print(f"     ✓ wiup_master view created", file=sys.stderr)
+
+
+def refresh_view(db_path):
+    """Buat cangkang lapisan (bila absen) + rebuild wiup_master pada DB yang
+    SUDAH ADA — dipakai test unit maupun CLI `--refresh-view`. Tak menyentuh
+    tabel lain (badan_usaha, wiup_geoportal, dst.); satu sumber definisi view
+    = step_master_view (DRY), supaya build penuh & refresh tak pernah bisa
+    beda skema."""
+    conn = sqlite3.connect(str(db_path))
+    conn.execute("PRAGMA foreign_keys = ON")
+    step_master_view(conn)
+    conn.close()
 
 
 def step_demo_queries(conn):
@@ -621,7 +674,20 @@ def main():
     parser.add_argument("--output", type=Path, default=Path("data/kalimantan.db"))
     parser.add_argument("--force", action="store_true",
                         help="Overwrite existing output DB")
+    parser.add_argument("--refresh-view", type=Path, default=None, metavar="DB",
+                        help="hanya buat cangkang lapisan (bila absen) + rebuild "
+                             "wiup_master pada DB yang sudah ada, lalu keluar "
+                             "(tak butuh --source-db/--geojson/dst.)")
     args = parser.parse_args()
+
+    if args.refresh_view is not None:
+        if not args.refresh_view.exists():
+            print(f"ERROR: {args.refresh_view} tak ada", file=sys.stderr)
+            return 1
+        print(f"Refreshing wiup_master view di {args.refresh_view}", file=sys.stderr)
+        refresh_view(args.refresh_view)
+        print(f"  ✓ selesai", file=sys.stderr)
+        return 0
 
     # Verify inputs
     for name, p in [("source-db", args.source_db), ("geojson", args.geojson),
