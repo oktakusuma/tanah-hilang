@@ -22,8 +22,19 @@ Schema:
   - wiup_master (VIEW)              [Flattened join, query-ready]
 
 Usage:
-    python build_combined_db.py
+    python build_combined_db.py                                   # --phase full (perilaku lama utuh)
     python build_combined_db.py --output kalimantan.db --force
+
+Pipeline 4-bagian (F24a) — dua fase terpisah:
+    # BAGIAN 1: registry izin SAJA (tanpa CSV pengukuran) — geoportal + minerba
+    # + kepadatan + match-SK-persis LANGSUNG geoportal×perizinan + cangkang
+    # kosong wiup_loss/wiup_loss_yearly/wiup_temporal + indeks + view.
+    python build_combined_db.py --phase registry --output data-full/kalimantan.db --force
+
+    # BAGIAN 2: tempel pengukuran (step_loss + step_temporal) ke DB target yang
+    # SUDAH ADA; baris CSV dibatasi ke kode_wiup yang ada di wiup_geoportal
+    # target (setara cascade-delete filter_minerba di jalur lama).
+    python build_combined_db.py --phase pengukuran --db data/kalimantan.db
 """
 
 import argparse
@@ -320,14 +331,13 @@ def step_geoportal(conn, geojson_path):
     print(f"     ✓ wiup_geoportal: {n} rows", file=sys.stderr)
 
 
-def step_loss(conn, batch_csv):
-    """Insert per-WIUP loss summary + yearly long-format."""
-    print(f"\n[3/7] Loading Hansen loss analysis", file=sys.stderr)
-    cur = conn.cursor()
-    cur.execute("DROP TABLE IF EXISTS wiup_loss")
-    cur.execute("DROP TABLE IF EXISTS wiup_loss_yearly")
-    cur.execute("""
-        CREATE TABLE wiup_loss (
+def _create_loss_tables(cur, if_not_exists=False):
+    """SATU pemilik skema wiup_loss + wiup_loss_yearly. Dipakai step_loss
+    (DROP+CREATE, isi data) dan --phase registry (IF NOT EXISTS, cangkang
+    kosong) supaya skema tak pernah bisa beda antara dua fase."""
+    ine = "IF NOT EXISTS " if if_not_exists else ""
+    cur.execute(f"""
+        CREATE TABLE {ine}wiup_loss (
             kode_wiup TEXT PRIMARY KEY,
             polygon_area_ha REAL,
             forest_2000_ha REAL,
@@ -340,8 +350,8 @@ def step_loss(conn, batch_csv):
             FOREIGN KEY (kode_wiup) REFERENCES wiup_geoportal(kode_wiup)
         )
     """)
-    cur.execute("""
-        CREATE TABLE wiup_loss_yearly (
+    cur.execute(f"""
+        CREATE TABLE {ine}wiup_loss_yearly (
             kode_wiup TEXT,
             year INTEGER,
             loss_ha REAL,
@@ -350,10 +360,46 @@ def step_loss(conn, batch_csv):
         )
     """)
 
+
+def _create_temporal_table(cur, if_not_exists=False):
+    """SATU pemilik skema wiup_temporal (lihat _create_loss_tables)."""
+    ine = "IF NOT EXISTS " if if_not_exists else ""
+    cur.execute(f"""
+        CREATE TABLE {ine}wiup_temporal (
+            kode_wiup TEXT PRIMARY KEY,
+            iup_year INTEGER,
+            loss_pre_iup_ha REAL,
+            loss_post_iup_ha REAL,
+            n_years_pre INTEGER,
+            n_years_post INTEGER,
+            rate_pre_ha_per_year REAL,
+            rate_post_ha_per_year REAL,
+            ratio_post_pre TEXT,
+            verdict TEXT,
+            FOREIGN KEY (kode_wiup) REFERENCES wiup_geoportal(kode_wiup)
+        )
+    """)
+
+
+def step_loss(conn, batch_csv, only_wiup=None):
+    """Insert per-WIUP loss summary + yearly long-format.
+
+    only_wiup: bila diberikan (set kode_wiup — fase pengukuran), baris CSV di
+    luar set DILEWATI. Setara persis dgn jalur lama "insert semua → filter_minerba
+    cascade-delete WHERE kode_wiup NOT IN wiup_geoportal", tapi tanpa pernah
+    melanggar FOREIGN KEY ke wiup_geoportal yang sudah tersaring."""
+    print(f"\n[3/7] Loading Hansen loss analysis", file=sys.stderr)
+    cur = conn.cursor()
+    cur.execute("DROP TABLE IF EXISTS wiup_loss")
+    cur.execute("DROP TABLE IF EXISTS wiup_loss_yearly")
+    _create_loss_tables(cur)
+
     n_summary = n_yearly = 0
     with open(batch_csv) as f:
         for row in csv.DictReader(f):
             kw = row["kode_wiup"]
+            if only_wiup is not None and kw not in only_wiup:
+                continue
             cur.execute("""
                 INSERT OR REPLACE INTO wiup_loss
                 (kode_wiup, polygon_area_ha, forest_2000_ha, total_loss_ha,
@@ -380,29 +426,17 @@ def step_loss(conn, batch_csv):
     print(f"     ✓ wiup_loss_yearly : {n_yearly} non-zero entries", file=sys.stderr)
 
 
-def step_temporal(conn, csv_path):
-    """Insert temporal pre/post-IUP analysis."""
+def step_temporal(conn, csv_path, only_wiup=None):
+    """Insert temporal pre/post-IUP analysis (only_wiup: lihat step_loss)."""
     print(f"\n[4/7] Loading temporal IUP analysis", file=sys.stderr)
     cur = conn.cursor()
     cur.execute("DROP TABLE IF EXISTS wiup_temporal")
-    cur.execute("""
-        CREATE TABLE wiup_temporal (
-            kode_wiup TEXT PRIMARY KEY,
-            iup_year INTEGER,
-            loss_pre_iup_ha REAL,
-            loss_post_iup_ha REAL,
-            n_years_pre INTEGER,
-            n_years_post INTEGER,
-            rate_pre_ha_per_year REAL,
-            rate_post_ha_per_year REAL,
-            ratio_post_pre TEXT,
-            verdict TEXT,
-            FOREIGN KEY (kode_wiup) REFERENCES wiup_geoportal(kode_wiup)
-        )
-    """)
+    _create_temporal_table(cur)
     n = 0
     with open(csv_path) as f:
         for row in csv.DictReader(f):
+            if only_wiup is not None and row["kode_wiup"] not in only_wiup:
+                continue
             cur.execute("""
                 INSERT OR REPLACE INTO wiup_temporal VALUES (?,?,?,?,?,?,?,?,?,?)
             """, (row["kode_wiup"], to_int(row.get("iup_year")),
@@ -453,9 +487,16 @@ def step_kepadatan(conn, csv_path):
     print(f"     ✓ kepadatan_penduduk: {n} rows", file=sys.stderr)
 
 
-def step_match(conn, enriched_csv):
-    """Link Geoportal WIUP → MinerbaOne perizinan/badan_usaha."""
-    print(f"\n[5/7] Building match table (Geoportal ↔ MinerbaOne)", file=sys.stderr)
+def _match_pairs(conn, pairs):
+    """Inti pencocokan SK persis — SATU pemilik, dipakai kedua jalur (enriched
+    CSV lama & registry langsung). Semantik PORT PERSIS dari enrich_with_db.py:
+    lookup dict VERBATIM nomor_izin ↔ sk_iup (TANPA normalisasi apa pun —
+    strip/kapital/format beda = TIDAK match; itu jatah match_harder T1+),
+    baris perizinan dgn nomor_izin NULL/'' dikecualikan, duplikat nomor_izin
+    → baris terakhir menang (assignment dict, bukan setdefault).
+
+    pairs: iterable (kode_wiup, sk_iup) — sk '' bila kosong (perilaku CSV
+    round-trip jalur lama: None jadi '')."""
     cur = conn.cursor()
     cur.execute("DROP TABLE IF EXISTS wiup_match")
     cur.execute("""
@@ -481,27 +522,50 @@ def step_match(conn, enriched_csv):
         sk_lookup[r[0]] = (r[1], r[2])
 
     n = matched = 0
-    with open(enriched_csv) as f:
-        for row in csv.DictReader(f):
-            sk = row.get("sk_iup")
-            found = sk_lookup.get(sk)
-            id_pz = id_bu = None
-            db_match = "no"
-            url = None
-            if found:
-                id_pz, id_bu = found
-                db_match = "yes"
-                if id_bu:
-                    url = (f"https://minerbaone.esdm.go.id/publik/"
-                           f"badan-usaha/detail/{id_bu}")
-                matched += 1
-            cur.execute("""
-                INSERT OR REPLACE INTO wiup_match VALUES (?,?,?,?,?,?)
-            """, (row["kode_wiup"], sk, id_pz, id_bu, db_match, url))
-            n += 1
+    for kode_wiup, sk in pairs:
+        found = sk_lookup.get(sk)
+        id_pz = id_bu = None
+        db_match = "no"
+        url = None
+        if found:
+            id_pz, id_bu = found
+            db_match = "yes"
+            if id_bu:
+                url = (f"https://minerbaone.esdm.go.id/publik/"
+                       f"badan-usaha/detail/{id_bu}")
+            matched += 1
+        cur.execute("""
+            INSERT OR REPLACE INTO wiup_match VALUES (?,?,?,?,?,?)
+        """, (kode_wiup, sk, id_pz, id_bu, db_match, url))
+        n += 1
     conn.commit()
     print(f"     ✓ wiup_match: {n} rows, {matched} matched ({100*matched/n:.1f}%)",
           file=sys.stderr)
+
+
+def step_match(conn, enriched_csv):
+    """Link Geoportal WIUP → MinerbaOne — jalur LAMA (--phase full): baca
+    kode_wiup + sk_iup dari enriched CSV (hasil enrich_with_db)."""
+    print(f"\n[5/7] Building match table (Geoportal ↔ MinerbaOne)", file=sys.stderr)
+    with open(enriched_csv) as f:
+        pairs = [(row["kode_wiup"], row.get("sk_iup"))
+                 for row in csv.DictReader(f)]
+    _match_pairs(conn, pairs)
+
+
+def step_match_registry(conn):
+    """Link Geoportal WIUP → MinerbaOne — jalur BARU (--phase registry): match
+    LANGSUNG wiup_geoportal × perizinan, tanpa lewat enriched CSV. sk_iup NULL
+    → '' meniru persis CSV round-trip jalur lama (nilai tersimpan identik).
+    Beda satu-satunya dgn jalur lama: cakupan = SEMUA baris geoportal, termasuk
+    WIUP yang tak pernah muncul di CSV batch (poligon yang batch_analyze skip)."""
+    print(f"\n[5/7] Building match table (Geoportal ↔ MinerbaOne, langsung)",
+          file=sys.stderr)
+    cur = conn.cursor()
+    pairs = [(kode, sk if sk is not None else "")
+             for kode, sk in cur.execute(
+                 "SELECT kode_wiup, sk_iup FROM wiup_geoportal")]
+    _match_pairs(conn, pairs)
 
 
 def step_indexes(conn):
@@ -689,7 +753,22 @@ def step_demo_queries(conn):
         print(f"  Alamat : {(r[7] or '')[:80]}", file=sys.stderr)
 
 
-def main():
+def attach_pengukuran(db_path, batch_csv, temporal_csv):
+    """--phase pengukuran: tempel step_loss + step_temporal ke DB target yang
+    SUDAH ADA (hasil --phase registry, sebelum/atau sesudah filter_minerba).
+    Baris CSV dibatasi ke kode_wiup yang ada di wiup_geoportal target —
+    setara persis cascade-delete filter_minerba jalur lama. step_indexes
+    diulang karena DROP TABLE ikut membunuh indeks di tabel pengukuran."""
+    conn = sqlite3.connect(str(db_path))
+    conn.execute("PRAGMA foreign_keys = ON")
+    only = {r[0] for r in conn.execute("SELECT kode_wiup FROM wiup_geoportal")}
+    step_loss(conn, batch_csv, only_wiup=only)
+    step_temporal(conn, temporal_csv, only_wiup=only)
+    step_indexes(conn)
+    conn.close()
+
+
+def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__,
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--source-db", type=Path,
@@ -712,7 +791,14 @@ def main():
                         help="hanya buat cangkang lapisan (bila absen) + rebuild "
                              "wiup_master pada DB yang sudah ada, lalu keluar "
                              "(tak butuh --source-db/--geojson/dst.)")
-    args = parser.parse_args()
+    parser.add_argument("--phase", choices=["registry", "pengukuran", "full"],
+                        default="full",
+                        help="registry = bagian 1 (identitas izin + cangkang "
+                             "pengukuran kosong); pengukuran = bagian 2 (tempel "
+                             "loss+temporal ke --db); full = perilaku lama utuh")
+    parser.add_argument("--db", type=Path, default=None, metavar="DB",
+                        help="DB target utk --phase pengukuran (harus sudah ada)")
+    args = parser.parse_args(argv)
 
     if args.refresh_view is not None:
         if not args.refresh_view.exists():
@@ -723,11 +809,27 @@ def main():
         print(f"  ✓ selesai", file=sys.stderr)
         return 0
 
-    # Verify inputs
-    for name, p in [("source-db", args.source_db), ("geojson", args.geojson),
-                     ("batch-csv", args.batch_csv),
+    if args.phase == "pengukuran":
+        if args.db is None:
+            print("ERROR: --phase pengukuran butuh --db <target>", file=sys.stderr)
+            return 1
+        for name, p in [("db", args.db), ("batch-csv", args.batch_csv),
+                        ("temporal-csv", args.temporal_csv)]:
+            if not p.exists():
+                print(f"ERROR: missing input '{name}': {p}", file=sys.stderr)
+                return 1
+        print(f"Attaching pengukuran → {args.db}", file=sys.stderr)
+        attach_pengukuran(args.db, args.batch_csv, args.temporal_csv)
+        print(f"  ✓ selesai", file=sys.stderr)
+        return 0
+
+    # Verify inputs (registry tak butuh CSV pengukuran/enriched)
+    required = [("source-db", args.source_db), ("geojson", args.geojson)]
+    if args.phase == "full":
+        required += [("batch-csv", args.batch_csv),
                      ("temporal-csv", args.temporal_csv),
-                     ("enriched-csv", args.enriched_csv)]:
+                     ("enriched-csv", args.enriched_csv)]
+    for name, p in required:
         if not p.exists():
             print(f"ERROR: missing input '{name}': {p}", file=sys.stderr)
             return 1
@@ -750,9 +852,18 @@ def main():
     t0 = time.time()
     step_copy_minerba(conn, args.source_db)
     step_geoportal(conn, args.geojson)
-    step_loss(conn, args.batch_csv)
-    step_temporal(conn, args.temporal_csv)
-    step_match(conn, args.enriched_csv)
+    if args.phase == "registry":
+        # Cangkang pengukuran KOSONG (skema PERSIS step_loss/step_temporal via
+        # pemilik skema yang sama) supaya indeks + view valid sebelum bagian 2.
+        cur = conn.cursor()
+        _create_loss_tables(cur, if_not_exists=True)
+        _create_temporal_table(cur, if_not_exists=True)
+        conn.commit()
+        step_match_registry(conn)
+    else:
+        step_loss(conn, args.batch_csv)
+        step_temporal(conn, args.temporal_csv)
+        step_match(conn, args.enriched_csv)
     # Optional BPS density — kept optional so older input sets still build.
     if args.kepadatan_csv.exists():
         step_kepadatan(conn, args.kepadatan_csv)
@@ -769,7 +880,10 @@ def main():
           file=sys.stderr)
     print(f"{'='*60}", file=sys.stderr)
 
-    step_demo_queries(conn)
+    if args.phase == "full":
+        # Demo mengasumsikan pengukuran terisi (SUM/int atas loss) — di
+        # registry tabel loss masih cangkang kosong, jadi dilewati.
+        step_demo_queries(conn)
     conn.close()
     return 0
 

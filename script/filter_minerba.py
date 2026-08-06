@@ -37,7 +37,7 @@ MINERBA_COMMODITIES = {
 CHILD_TABLES = ["wiup_loss", "wiup_loss_yearly", "wiup_temporal", "wiup_match"]
 
 
-def main() -> int:
+def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--input", type=Path, default=Path("data-full/kalimantan.db"),
@@ -45,7 +45,7 @@ def main() -> int:
     ap.add_argument("--output", type=Path, default=Path("data/kalimantan.db"),
                     help="DEFAULT minerba DB to write (app reads this)")
     ap.add_argument("--force", action="store_true", help="overwrite output if it exists")
-    args = ap.parse_args()
+    args = ap.parse_args(argv)
 
     if not args.input.exists():
         print(f"ERROR: input {args.input} tidak ada", file=sys.stderr)
