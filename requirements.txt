@@ -3,8 +3,8 @@
 #
 # Tujuan: reproduksi byte-per-byte. Angka analisis yang di-commit di
 # data/kalimantan.db adalah snapshot yang dihasilkan persis dari versi
-# pustaka di bawah ini (venv .venv/ di akar repo, dibekukan via
-# `pip freeze` pada 2026-08-06). Menjalankan pipeline dengan versi pustaka
+# pustaka di bawah ini (venv .venv/ di akar repo, Python 3.14, dibekukan
+# via `pip freeze` pada 2026-08-06). Menjalankan pipeline dengan versi pustaka
 # geospasial (rasterio/GEOS) YANG BERBEDA tetap menghasilkan angka yang
 # secara substansi sama, tapi dapat menggeser sedikit keputusan piksel di
 # tepi poligon pada segelintir konsesi — lihat catatan "Reproduktibilitas"
@@ -21,7 +21,10 @@
 # Cara pakai:
 #   python3 -m venv .venv
 #   .venv/bin/pip install -r requirements.txt
-#   .venv/bin/python -m pytest scripts/tests/ -q   # opsional: verifikasi env
+#   # verifikasi cepat env (berlaku di repo tesis maupun bundel publik):
+#   .venv/bin/python -c "import rasterio, numpy, shapely; print('env OK')"
+#   # khusus repo tesis (bundel publik tidak menyertakan folder tests):
+#   .venv/bin/python -m pytest scripts/tests/ -q
 
 affine==2.4.0
 attrs==26.1.0
