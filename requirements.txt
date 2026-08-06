@@ -1,0 +1,52 @@
+# requirements.txt — lingkungan Python kanonik untuk pipeline analisis tesis
+# "Tanah yang Hilang" (Hansen GFC x Geoportal ESDM WIUP x MinerbaOne).
+#
+# Tujuan: reproduksi byte-per-byte. Angka analisis yang di-commit di
+# data/kalimantan.db adalah snapshot yang dihasilkan persis dari versi
+# pustaka di bawah ini (venv .venv/ di akar repo, dibekukan via
+# `pip freeze` pada 2026-08-06). Menjalankan pipeline dengan versi pustaka
+# geospasial (rasterio/GEOS) YANG BERBEDA tetap menghasilkan angka yang
+# secara substansi sama, tapi dapat menggeser sedikit keputusan piksel di
+# tepi poligon pada segelintir konsesi — lihat catatan "Reproduktibilitas"
+# di halaman Metodologi web app / data/KATALOG-DATA.md. Efek terukur: di
+# bawah ±2 ha dari total 1,99 juta ha (≈0,0001%), tidak mengubah kesimpulan
+# mana pun.
+#
+# Keputusan: freeze PENUH (bukan disaring manual) — daftar cuma 27 paket,
+# jadi lebih aman menyertakan semuanya (termasuk pytest utk scripts/tests/,
+# matplotlib/openpyxl utk skrip opsional make_charts.py/trend_analysis.py)
+# daripada menebak mana yang "cukup relevan" dan berisiko meleset saat
+# direproduksi ulang untuk sidang.
+#
+# Cara pakai:
+#   python3 -m venv .venv
+#   .venv/bin/pip install -r requirements.txt
+#   .venv/bin/python -m pytest scripts/tests/ -q   # opsional: verifikasi env
+
+affine==2.4.0
+attrs==26.1.0
+bcrypt==5.0.0
+certifi==2026.4.22
+click==8.4.0
+cligj==0.7.2
+contourpy==1.3.3
+cycler==0.12.1
+et_xmlfile==2.0.0
+fonttools==4.63.0
+iniconfig==2.3.0
+kiwisolver==1.5.0
+matplotlib==3.10.9
+numpy==2.4.5
+openpyxl==3.1.5
+packaging==26.2
+pandas==3.0.3
+pillow==12.2.0
+pluggy==1.6.0
+Pygments==2.20.0
+pyparsing==3.3.2
+pytest==9.1.1
+python-dateutil==2.9.0.post0
+rasterio==1.5.0
+scipy==1.17.1
+shapely==2.1.2
+six==1.17.0

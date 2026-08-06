@@ -50,14 +50,20 @@ Tanah Hilang/
 ## 2. Prasyarat
 
 - **Python 3.11+**
-- Dependensi:
+- Dependensi — install dari `requirements.txt` (versi yang sama persis dipakai
+  untuk menghasilkan angka kanonik tesis):
   ```bash
   python3 -m venv .venv
-  .venv/bin/pip install rasterio shapely numpy scipy matplotlib
+  .venv/bin/pip install -r requirements.txt
   ```
   (`scipy` dipakai uji signifikansi di `build_periode_tables.py`, langkah 12;
-  `matplotlib` hanya untuk grafik opsional `make_charts.py`/`trend_analysis.py`,
-  di luar 15 langkah.)
+  `matplotlib`/`openpyxl` hanya untuk skrip opsional
+  `make_charts.py`/`trend_analysis.py`, di luar 15 langkah.)
+
+  > **Catatan drift**: versi pustaka geospasial lain (rasterio/GEOS) tetap
+  > bisa menjalankan pipeline ini, tapi hasilnya bisa bergeser sedikit di
+  > keputusan piksel-tepi poligon — pada snapshot commit efeknya total di
+  > bawah ±2 ha dari 1,99 juta ha, tidak mengubah kesimpulan mana pun.
 
 Jalankan semua perintah **dari folder `Tanah Hilang/`** (skrip memakai path
 relatif seperti `data/...`).
