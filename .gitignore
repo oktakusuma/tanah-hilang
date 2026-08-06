@@ -22,3 +22,6 @@ data/figures/
 
 # Data panel PENELITIAN (belum dipublikasikan) — sengaja TIDAK disertakan
 stata/
+
+# Setelan lokal Claude Code (bukan bagian bundel)
+.claude/
