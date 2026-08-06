@@ -49,7 +49,9 @@ Tanah Hilang/
 
 ## 2. Prasyarat
 
-- **Python 3.11+**
+- **Python 3.14** — lingkungan kanonik yang menghasilkan angka ter-commit
+  (freeze `pip` 2026-08-06); 3.11+ kemungkinan besar tetap jalan, tapi presisi
+  byte-per-byte hanya terdokumentasi terhadap 3.14
 - Dependensi — install dari `requirements.txt` (versi yang sama persis dipakai
   untuk menghasilkan angka kanonik tesis):
   ```bash
