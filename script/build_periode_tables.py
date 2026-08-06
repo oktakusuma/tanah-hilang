@@ -77,7 +77,7 @@ BERSIH_SUFFIX = "_bersih"
 # Kamus kolom (data dictionary). (nama_tabel, nama_kolom, deskripsi, rumus|None, sumber|None).
 # Kolom turunan/analisis diisi lengkap (rumus+sumber); kolom mentah/jelas-sendiri cukup deskripsi.
 # Rumus diturunkan dari analysis_meta.metode + docstring pipeline (build_combined_db.py,
-# temporal_iup.py, batch_analyze.py, import_exposure_panel.py, match_harder.py) — bukan dikarang.
+# temporal_iup.py, batch_analyze.py, match_harder.py) — bukan dikarang.
 COLUMN_META = [
     # ── periode_ringkasan: 1 baris/periode (P1/P2/P3/Pra-2009) ─────────────────
     ("periode_ringkasan", "periode", "Kode periode kewenangan izin (P1/P2/P3/Pra-2009).", None, "periode(iup_year)"),
@@ -219,22 +219,6 @@ COLUMN_META = [
      "koreksi Holm: urutkan p naik, p_adj = max((m−rank)·p, p_adj_sebelumnya), dibatasi ≤1", None),
     ("periode_signifikansi", "signifikan_005", "1 jika p_adjusted < 0,05 (signifikan pada α=5%), else 0.", "p_adjusted < 0.05", None),
 
-    # ── exposure_kabupaten: skor paparan sentralisasi 2020 per kabupaten ────────
-    ("exposure_kabupaten", "kode_kabkot", "Kode kabupaten/kota (BPS), kunci utama tabel.", None, None),
-    ("exposure_kabupaten", "kabupaten", "Nama kabupaten/kota (dari panel penelitian).", None, "stata/Data all v0.7.dta"),
-    ("exposure_kabupaten", "kab_normalized", "Nama kabupaten/kota versi baku, dipakai join lintas-tabel (peta, kepadatan_penduduk).",
-     None, "kepadatan_penduduk.kab_normalized (via kode_kabkot)"),
-    ("exposure_kabupaten", "provinsi", "Nama provinsi kabupaten/kota.", None, "stata/Data all v0.7.dta"),
-    ("exposure_kabupaten", "exp_sentralisasi", "Skor paparan kabupaten terhadap sentralisasi izin 2020 (semua komoditas izin berkewenangan daerah).",
-     "luas izin kewenangan DAERAH (Bupati/Gubernur) pra-2020 ÷ luas kabupaten, semua komoditas — time-invariant per kabupaten",
-     "stata/Data all v0.7.dta (panel penelitian tesis)"),
-    ("exposure_kabupaten", "exp_coal", "Idem exp_sentralisasi, tapi hanya komoditas batubara.",
-     "luas izin kewenangan daerah pra-2020 (batubara saja) ÷ luas kabupaten", "stata/Data all v0.7.dta"),
-    ("exposure_kabupaten", "exp_z", "Skor-z (standardisasi) exp_sentralisasi antar 56 kabupaten/kota Kalimantan.",
-     "(exp_sentralisasi − mean) / std, antar kabupaten", "stata/Data all v0.7.dta"),
-    ("exposure_kabupaten", "is_control", "1 jika kabupaten 'kontrol murni' (tak pernah ada izin kewenangan daerah pra-2020; exp_sentralisasi=0).",
-     "1 jika exp_sentralisasi = 0, else 0", "exposure_kabupaten.exp_sentralisasi"),
-
     # ── wiup_loss: kehilangan tutupan pohon TOTAL per konsesi 2001-2025 ─────────
     ("wiup_loss", "kode_wiup", "Kode unik WIUP (kunci utama konsesi, dipakai join ke semua tabel lain).", None, None),
     ("wiup_loss", "polygon_area_ha", "Luas poligon konsesi hasil overlay ke grid raster Hansen (piksel di dalam poligon, latitude-corrected) — independen status hutan; bisa beda tipis dari luas_sk (dokumen SK).",
@@ -262,8 +246,8 @@ COLUMN_META = [
     ("wiup_temporal", "kode_wiup", "Kode unik WIUP (fk ke wiup_geoportal).", None, None),
     ("wiup_temporal", "iup_year", "Tahun terbit izin dipakai sbg titik potong pra/pasca (disalin dari wiup_geoportal.iup_year).",
      None, "wiup_geoportal.iup_year"),
-    ("wiup_temporal", "loss_pre_iup_ha", "Total loss (ha) tahun-tahun SEBELUM iup_year.", "Σ loss_ha, tahun < iup_year", "wiup_loss_yearly"),
-    ("wiup_temporal", "loss_post_iup_ha", "Total loss (ha) tahun-tahun SETELAH/SAAT iup_year.", "Σ loss_ha, tahun ≥ iup_year", "wiup_loss_yearly"),
+    ("wiup_temporal", "loss_pre_iup_ha", "Total loss (ha) jendela PRA-izin: 2001 s/d tahun sebelum izin terbit (iup_year−1).", "Σ loss_ha, tahun < iup_year", "wiup_loss_yearly"),
+    ("wiup_temporal", "loss_post_iup_ha", "Total loss (ha) jendela PASCA-izin: tahun izin terbit (iup_year, inklusif) s/d 2025.", "Σ loss_ha, tahun ≥ iup_year", "wiup_loss_yearly"),
     ("wiup_temporal", "n_years_pre", "Jumlah tahun observasi sebelum iup_year (dalam jendela 2001-2025).",
      "count(tahun < iup_year), tahun ∈ [2001,2025]", None),
     ("wiup_temporal", "n_years_post", "Jumlah tahun observasi sejak iup_year (dalam jendela 2001-2025).",
@@ -285,7 +269,7 @@ COLUMN_META = [
      None, "layer Geoportal WIUP_Publish, dinormalkan UPPER saat ingest agar GROUP BY tak terpecah ('Batubara' vs 'BATUBARA')"),
     ("wiup_geoportal", "nama_prov", "Nama provinsi lokasi konsesi (mentah dari Geoportal).", None, None),
     ("wiup_geoportal", "nama_kab", "Nama kabupaten/kota lokasi konsesi (mentah dari Geoportal, ejaan bisa bervariasi).", None, None),
-    ("wiup_geoportal", "kab_normalized", "Nama kabupaten/kota versi baku, dipakai join ke exposure_kabupaten & kepadatan_penduduk.",
+    ("wiup_geoportal", "kab_normalized", "Nama kabupaten/kota versi baku, dipakai join ke kepadatan_penduduk.",
      None, "normalisasi nama_kab saat ingest"),
     ("wiup_geoportal", "luas_sk", "Luas konsesi menurut dokumen SK (ha) — beda dari polygon_area_ha (hasil overlay raster GIS).", None, None),
     ("wiup_geoportal", "tgl_berlak_ms", "Tanggal mulai berlaku izin, format epoch milidetik (field mentah layer Geoportal).", None, None),
@@ -362,6 +346,33 @@ COLUMN_META = [
      "Jumlah tile Hansen (grid 10°×10°) yang disentuh konsesi ini (>1 bila konsesi "
      "lintas-tile — 16/825 konsesi begini; ditangani via clip-per-tile, bukan dilewati).",
      None, "scripts/attribution_sawit.py (_geo_common.pick_tile)"),
+
+    # ── Task F15: silang dua sumbu pra/pasca-izin × sawit (jendela eksplisit) ──
+    ("atribusi_sawit", "loss_sawit_pra_izin_ha",
+     "Kehilangan yang teratribusi ke sawit (varian tol2th/UTAMA) pada jendela "
+     "PRA-izin: tahun kalender 2001 s/d min(iup_year−1, 2021) — batas atas 2021 "
+     "krn Descals berhenti di situ, jadi jendela ini bisa jadi PENUH 2001-2021 "
+     "kalau iup_year > 2022 (lihat kolom bersih di wiup_master). NULL kalau "
+     "iup_year konsesi ini NULL (bukan 0 — beda makna dgn 'sawit=0 tapi "
+     "iup_year diketahui').",
+     "Σ atribusi_sawit_yearly.loss_sawit_tol2th_ha utk tahun ∈ [2001, min(iup_year−1,2021)]",
+     "atribusi_sawit_yearly × wiup_geoportal.iup_year (scripts/attribution_sawit.py)"),
+    ("atribusi_sawit", "loss_sawit_pasca_izin_2021_ha",
+     "Kehilangan yang teratribusi ke sawit (varian tol2th/UTAMA) pada jendela "
+     "PASCA-izin YANG BISA DIPERIKSA: tahun izin terbit (iup_year, inklusif) s/d "
+     "2021 — BUKAN s/d 2025 (Descals berhenti 2021; sisa 2022-2025 tetap di "
+     "loss_2022_2025_ha, tak masuk sini). NULL kalau iup_year NULL; 0 (bukan "
+     "NULL) kalau iup_year > 2021 (jendela ini kosong, bukan tak diketahui).",
+     "Σ atribusi_sawit_yearly.loss_sawit_tol2th_ha utk tahun ∈ [max(iup_year,2001), 2021]",
+     "atribusi_sawit_yearly × wiup_geoportal.iup_year (scripts/attribution_sawit.py)"),
+    ("atribusi_sawit", "loss_pasca_izin_2021_ha",
+     "Total kehilangan tutupan pohon Hansen (BUKAN teratribusi sawit — jendela "
+     "SAMA PERSIS dgn loss_sawit_pasca_izin_2021_ha, iup_year..2021) — PENYEBUT "
+     "'bersih pasca-izin s/d 2021' (lihat wiup_master.loss_pasca_izin_2021_bersih_ha). "
+     "Dihitung dari wiup_loss_yearly (TANPA pemindaian raster baru). NULL kalau "
+     "iup_year NULL.",
+     "Σ wiup_loss_yearly.loss_ha utk tahun ∈ [max(iup_year,2001), 2021]",
+     "wiup_loss_yearly × wiup_geoportal.iup_year (scripts/attribution_sawit.py)"),
 
     # ── klasifikasi_izin: vonis izin PERTAMA vs PERPANJANGAN per konsesi ────────
     # LAPISAN opsional — mengaudit apakah iup_year benar berarti "tahun izin
@@ -458,7 +469,7 @@ COLUMN_META = [
     ("wiup_master", "komoditas", "Jenis komoditas tambang.", None, "wiup_geoportal.komoditas"),
     ("wiup_master", "nama_prov", "Nama provinsi lokasi konsesi.", None, "wiup_geoportal.nama_prov"),
     ("wiup_master", "nama_kab", "Nama kabupaten/kota lokasi konsesi.", None, "wiup_geoportal.nama_kab"),
-    ("wiup_master", "kab_normalized", "Nama kabupaten/kota versi baku (dipakai join Zona/exposure_kabupaten).", None, "wiup_geoportal.kab_normalized"),
+    ("wiup_master", "kab_normalized", "Nama kabupaten/kota versi baku (dipakai join Zona).", None, "wiup_geoportal.kab_normalized"),
     ("wiup_master", "luas_sk", "Luas konsesi menurut dokumen SK (ha).", None, "wiup_geoportal.luas_sk"),
     ("wiup_master", "iup_year", "Tahun terbit/berlaku izin — dasar periode kewenangan.", None, "wiup_geoportal.iup_year"),
     ("wiup_master", "cnc", "Status Clean and Clear konsesi.", None, "wiup_geoportal.cnc"),
@@ -470,8 +481,8 @@ COLUMN_META = [
     ("wiup_master", "loss_pct_of_polygon", "Persen luas poligon yang hilang tutupan pohonnya.", None, "wiup_loss.loss_pct_of_polygon"),
     ("wiup_master", "loss_pct_of_forest", "Persen tutupan pohon 2000 yang hilang — metrik utama tesis per konsesi.", None, "wiup_loss.loss_pct_of_forest"),
     ("wiup_master", "hansen_tiles", "Daftar tile Hansen yang overlap poligon konsesi.", None, "wiup_loss.tiles (alias hansen_tiles)"),
-    ("wiup_master", "loss_pre_iup_ha", "Total loss (ha) sebelum iup_year.", None, "wiup_temporal.loss_pre_iup_ha"),
-    ("wiup_master", "loss_post_iup_ha", "Total loss (ha) sejak/setelah iup_year.", None, "wiup_temporal.loss_post_iup_ha"),
+    ("wiup_master", "loss_pre_iup_ha", "Total loss (ha) jendela PRA-izin: 2001 s/d tahun sebelum izin terbit (iup_year−1) — BUKAN bagian dari total_loss_ha yang terjadi di bawah izin ini.", None, "wiup_temporal.loss_pre_iup_ha"),
+    ("wiup_master", "loss_post_iup_ha", "Total loss (ha) jendela PASCA-izin: tahun izin terbit (iup_year, inklusif) s/d 2025 — beda dgn total_loss_ha yang mencakup 2001–2025 penuh termasuk pra-izin.", None, "wiup_temporal.loss_post_iup_ha"),
     ("wiup_master", "rate_pre_ha_per_year", "Laju deforestasi rata-rata sebelum izin (ha/tahun).", None, "wiup_temporal.rate_pre_ha_per_year"),
     ("wiup_master", "rate_post_ha_per_year", "Laju deforestasi rata-rata setelah izin (ha/tahun) — metrik utama Komparasi & peta.", None, "wiup_temporal.rate_post_ha_per_year"),
     ("wiup_master", "ratio_post_pre", "Rasio laju pasca:pra-izin (>1 = akselerasi pasca-izin).", None, "wiup_temporal.ratio_post_pre"),
@@ -510,6 +521,40 @@ COLUMN_META = [
      "PENYEBUT: loss_2001_2021_ha konsesi ini — BUKAN luas konsesi (luas_sk), BUKAN "
      "hutan 2000 (forest_2000_ha). NULL bila loss_2001_2021_ha=0.",
      "100 · loss_sawit_tol2th_ha / loss_2001_2021_ha", "view wiup_master (dihitung di CREATE VIEW)"),
+
+    # ── Task F15: silang dua sumbu pra/pasca-izin × sawit ───────────────────────
+    ("wiup_master", "loss_sawit_pra_izin_ha",
+     "Alias atribusi_sawit.loss_sawit_pra_izin_ha — kehilangan teratribusi sawit "
+     "(varian tol2th) pd jendela PRA-izin: 2001 s/d min(iup_year−1, 2021).",
+     None, "atribusi_sawit.loss_sawit_pra_izin_ha"),
+    ("wiup_master", "loss_sawit_pasca_izin_2021_ha",
+     "Alias atribusi_sawit.loss_sawit_pasca_izin_2021_ha — kehilangan teratribusi "
+     "sawit (varian tol2th) pd jendela PASCA-izin yg bisa diperiksa: iup_year..2021 "
+     "(BUKAN s/d 2025 — Descals berhenti 2021).",
+     None, "atribusi_sawit.loss_sawit_pasca_izin_2021_ha"),
+    ("wiup_master", "loss_pasca_izin_2021_ha",
+     "Alias atribusi_sawit.loss_pasca_izin_2021_ha — total kehilangan Hansen "
+     "(BUKAN teratribusi sawit) pd jendela iup_year..2021, PENYEBUT kolom bersih "
+     "di bawah.",
+     None, "atribusi_sawit.loss_pasca_izin_2021_ha"),
+    ("wiup_master", "loss_pra_izin_bersih_ha",
+     "Kehilangan jendela PRA-izin (loss_pre_iup_ha, F14: 2001 s/d iup_year−1, "
+     "TANPA dipotong 2021) dikurangi bagian teratribusi sawit "
+     "(loss_sawit_pra_izin_ha, dipotong 2021). NULL bila iup_year > 2022 — "
+     "jendela pra melewati batas Descals (2021) sehingga TAK SEPENUHNYA "
+     "terperiksa thd sawit (bukan 0% sawit, melainkan tak diketahui); NULL "
+     "juga bila iup_year konsesi ini NULL.",
+     "loss_pre_iup_ha − loss_sawit_pra_izin_ha (NULL bila iup_year>2022 atau iup_year NULL)",
+     "view wiup_master (dihitung di CREATE VIEW; wiup_temporal.loss_pre_iup_ha × atribusi_sawit.loss_sawit_pra_izin_ha)"),
+    ("wiup_master", "loss_pasca_izin_2021_bersih_ha",
+     "Kehilangan jendela PASCA-izin s/d 2021 (loss_pasca_izin_2021_ha, Hansen, "
+     "BUKAN loss_post_iup_ha F14 yang s/d 2025 penuh) dikurangi bagian "
+     "teratribusi sawit (loss_sawit_pasca_izin_2021_ha) — keduanya jendela yang "
+     "SAMA (iup_year..2021), jadi TAK butuh syarat iup_year≤2022 seperti sisi "
+     "pra. Sisa 2022-2025 tetap tak terperiksa, lihat loss_2022_2025_ha.",
+     "loss_pasca_izin_2021_ha − loss_sawit_pasca_izin_2021_ha",
+     "view wiup_master (dihitung di CREATE VIEW)"),
+
     ("wiup_master", "kelas_izin",
      "Alias klasifikasi_izin.kelas — vonis apakah iup_year konsesi ini izin PERTAMA "
      "atau PERPANJANGAN, tiga nilai: PERPANJANGAN (payung 'bukan pemberian pertama'; "
@@ -583,11 +628,11 @@ COLUMN_META = [
     ("perizinan", "created_at", "Timestamp saat baris ini disalin/diperbarui ke database.", None, "proses ingest scripts/build_combined_db.py"),
 
     # ── kepadatan_penduduk: kepadatan penduduk BPS per kab/kota 2015-2024 ───────
-    ("kepadatan_penduduk", "kode_kabkot", "Kode kabupaten/kota (BPS), kunci utama tabel — dipakai join ke exposure_kabupaten.",
+    ("kepadatan_penduduk", "kode_kabkot", "Kode kabupaten/kota (BPS), kunci utama tabel.",
      None, "BPS"),
     ("kepadatan_penduduk", "provinsi", "Nama provinsi kabupaten/kota.", None, "BPS"),
     ("kepadatan_penduduk", "kabupaten", "Nama kabupaten/kota (versi BPS).", None, "BPS"),
-    ("kepadatan_penduduk", "kab_normalized", "Nama kabupaten/kota versi baku — kanonik dipakai join lintas-tabel (wiup_geoportal, exposure_kabupaten).",
+    ("kepadatan_penduduk", "kab_normalized", "Nama kabupaten/kota versi baku — kanonik dipakai join lintas-tabel (wiup_geoportal).",
      None, "normalisasi nama BPS saat ingest"),
     ("kepadatan_penduduk", "d2015", "Kepadatan penduduk tahun 2015 (lihat kolom 'satuan').", None, "BPS - Kepadatan Penduduk per Kabupaten/Kota 2015-2024"),
     ("kepadatan_penduduk", "d2016", "Kepadatan penduduk tahun 2016 (lihat kolom 'satuan').", None, "BPS - Kepadatan Penduduk per Kabupaten/Kota 2015-2024"),
@@ -984,9 +1029,9 @@ def build_periode_signifikansi(con, table_name, by_per, loss_of):
 def existing_meta_rows(meta, table_names):
     """Buang baris provenance untuk tabel yang TIDAK ada di DB.
 
-    Mis. pada rebuild bundel publik tanpa stata/.dta, langkah import_exposure_panel
-    di-skip → exposure_kabupaten tak dibuat; analysis_meta tak boleh mengklaim tabel
-    yang absen (row[0] = nama tabel).
+    Mis. tabel LAPISAN opsional (atribusi_sawit, klasifikasi_izin) yang di-skip
+    saat prasyaratnya tak ada → analysis_meta tak boleh mengklaim tabel yang
+    absen (row[0] = nama tabel).
     """
     have = set(table_names)
     return [row for row in meta if row[0] in have]
@@ -1298,6 +1343,29 @@ def main() -> int:
          "data/analysis/batch_KALIMANTAN_t30_enriched.csv (dari scripts/match_harder.py)",
          "db_match (yes/no) + rujukan badan usaha bila cocok.",
          "scripts/build_combined_db.py"),
+        ("badan_usaha",
+         "Registry perusahaan tambang dari MinerbaOne (disalin utuh) — tak dibatasi ke "
+         "Kalimantan atau ke 825 konsesi terpadankan (rujukan wiup_match/wiup_master).",
+         "data/minerba-kalimantan.db (hasil scrape rescrape/run.sh → rescrape.scrape_minerba, "
+         "API publik MinerbaOne)",
+         "Copy 1:1 tabel badan_usaha dari minerba-kalimantan.db — tanpa filter/agregasi. "
+         "Dipakai via id_badan_usaha utk profil perusahaan (NIB, alamat, kontak) di detail konsesi.",
+         "scripts/build_combined_db.py"),
+        ("perizinan",
+         "Daftar izin per badan usaha dari MinerbaOne (disalin utuh) — nomor SK, tanggal, "
+         "komoditas, status Clean and Clear.",
+         "data/minerba-kalimantan.db (hasil scrape rescrape/run.sh → rescrape.scrape_minerba, "
+         "API publik MinerbaOne /badan-usaha/{id}/list-perizinan)",
+         "Copy 1:1 tabel perizinan dari minerba-kalimantan.db. nomor_izin dipakai sbg kunci "
+         "pencocokan ke wiup_geoportal.sk_iup (lihat wiup_match & scripts/match_harder.py).",
+         "scripts/build_combined_db.py"),
+        ("kepadatan_penduduk",
+         "Kepadatan penduduk BPS per kabupaten/kota Kalimantan, 2015-2024.",
+         "data/kepadatan_penduduk.csv (BPS — Kepadatan Penduduk per Kabupaten/Kota 2015-2024)",
+         "Ingest 1:1 dari CSV committed (bukan lagi ditempel manual di luar pipeline — lihat "
+         "docstring step_kepadatan()); kab_normalized dinormalkan saat ingest agar konsisten "
+         "join ke wiup_geoportal.kab_normalized.",
+         "scripts/build_combined_db.py"),
         ("wiup_master",
          "VIEW siap-query: gabungan wiup_geoportal × wiup_loss × wiup_temporal × wiup_match (825 baris).",
          "join keempat tabel inti di atas via kode_wiup",
@@ -1335,14 +1403,6 @@ def main() -> int:
          "Dibangun HANYA bila atribusi_sawit ada & berisi (tabel_ada_berisi()); tak "
          "didaftarkan di analysis_meta bila dilewati.",
          "scripts/build_periode_tables.py"),
-        ("exposure_kabupaten",
-         "Skor paparan sentralisasi izin 2020 per kabupaten (untuk halaman Zona).",
-         "stata/Data all v0.7.dta (panel penelitian) × kepadatan_penduduk (kab_normalized)",
-         "Cross-section exp_sentralisasi/exp_coal/exp_z per kabupaten; is_control=1 bila "
-         "exp=0 (22 'kontrol murni'). Dibangun oleh scripts/import_exposure_panel.py "
-         "(langkah 8, SEBELUM tabel periode ini). Dicatat di sini agar analysis_meta "
-         "jadi registry provenance tunggal utk semua tabel turunan.",
-         "scripts/import_exposure_panel.py"),
         ("periode_ringkasan",
          "Ringkasan per periode kewenangan izin (3 periode + Pra-2009).",
          "wiup_geoportal(iup_year,luas_sk,pejabat) + wiup_loss(polygon_area_ha,total_loss_ha) + wiup_temporal(verdict,rate_post)",
@@ -1465,8 +1525,9 @@ def main() -> int:
     # persis sekali).
     build_column_meta(con)
 
-    # Hanya catat provenance tabel yang benar-benar ada (mis. exposure_kabupaten
-    # absen saat rebuild bundel publik tanpa .dta) — registry tak boleh berbohong.
+    # Hanya catat provenance tabel yang benar-benar ada (mis. atribusi_sawit/
+    # klasifikasi_izin absen bila prasyaratnya belum dijalankan) — registry tak
+    # boleh berbohong.
     existing = {r[0] for r in con.execute("SELECT name FROM sqlite_master WHERE type IN ('table','view')")}
     # atribusi_sawit/klasifikasi_izin bisa ADA sbg cangkang kosong (LAPISAN_SHELLS)
     # tapi belum diisi — snapshot sqlite_master di atas tak membedakan "ada" dari

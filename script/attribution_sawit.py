@@ -68,6 +68,28 @@ F1). Konsistensi SUM(atribusi_sawit_yearly per konsesi) vs window
 loss_sawit_tol2th_ha DICEK (ambang 0,5 ha, lihat cek_konsistensi_tahunan())
 SEBELUM kedua tabel ditulis — galat membatalkan seluruh run (rc=1).
 
+TASK F15 — `atribusi_sawit` BUKAN LAGI sekadar overlay murni sawit×loss per
+konsesi (satu window 2001-2021 utuh): tabel ini JUGA menyimpan 3 kolom
+turunan SILANG dua sumbu (pra/pasca-izin × sawit), alasannya: uji "apakah
+loss dipercepat pasca-izin" (F14, wiup_temporal.loss_pre_iup_ha/loss_post_
+iup_ha) TAK memisahkan sawit dari tambang, dan uji sawit (di atas) TAK
+memisahkan pra dari pasca-izin — pembaca butuh KEDUANYA sekaligus per konsesi:
+  loss_sawit_pra_izin_ha        : sawit pd jendela 2001..min(iup_year-1,2021)
+  loss_sawit_pasca_izin_2021_ha : sawit pd jendela iup_year..2021
+  loss_pasca_izin_2021_ha       : loss Hansen (BUKAN sawit; dari
+                                   wiup_loss_yearly, TANPA pemindaian raster
+                                   baru) pd jendela iup_year..2021 — penyebut
+                                   utk "loss bersih pasca-izin s/d 2021" (lihat
+                                   view wiup_master.loss_pasca_izin_2021_bersih_ha)
+Kedua jendela (pra & pasca_2021) bersebelahan tanpa celah/tindih pada rentang
+2001-2021 (batas tahun izin konsisten wiup_temporal.py/temporal_iup.py: tahun
+izin sendiri masuk sisi PASCA, y>=iup_year) — jadi pra+pasca_2021 harus =
+loss_sawit_tol2th_ha (window penuh), diverifikasi cek_konsistensi_silang_izin()
+SEBELUM tabel ditulis. iup_year NULL -> ketiga kolom ini NULL (bukan 0 — beda
+makna dgn "sawit=0 tapi iup_year diketahui"). Sisa 2022-2025 TETAP di luar
+ketiganya (Descals berhenti 2021), lihat loss_2022_2025_ha (kolom lama, tak
+berubah).
+
 CATATAN PROVENANSI: skrip ini TIDAK menulis ke analysis_meta / column_meta —
 build_periode_tables.py adalah pemilik tunggal kedua tabel itu (ia DROP dan
 membangunnya ulang). Baris provenansi utk atribusi_sawit didaftarkan terpisah
@@ -243,6 +265,127 @@ def hitung_pangsa(loss_sawit_ha: float, loss_total_ha: float) -> float | None:
     return round(loss_sawit_ha / loss_total_ha, 6)
 
 
+# ── Task F15: silang dua sumbu pra/pasca-izin × sawit ─────────────────────────
+# Tahun kalender terakhir yg bisa diperiksa thd Descals (2001+21=2021) — pakai
+# nama kalender eksplisit di sini spy tak tercampur dgn TAHUN_MAKS_DESCALS yg
+# sebetulnya KODE lossyear (band raster Hansen), bukan tahun kalender.
+TAHUN_MAKS_DESCALS_KALENDER = 2000 + TAHUN_MAKS_DESCALS  # 2021
+
+
+def jendela_pra_izin(iup_year: int | None) -> tuple[int, int] | None:
+    """Jendela tahun kalender (inklusif) sisi PRA-izin yg bisa diperiksa thd
+    sawit: 2001..min(iup_year-1, 2021). Batas konsisten wiup_temporal.py/
+    temporal_iup.py: tahun izin (iup_year) sendiri masuk sisi PASCA (y >=
+    iup_year), BUKAN pra. None kalau iup_year None ATAU jendela kosong (mis.
+    iup_year <= 2001 -> tak ada tahun "sebelum" yg jatuh di 2001-2021)."""
+    if iup_year is None:
+        return None
+    akhir = min(iup_year - 1, TAHUN_MAKS_DESCALS_KALENDER)
+    if 2001 > akhir:
+        return None
+    return (2001, akhir)
+
+
+def jendela_pasca_izin_2021(iup_year: int | None) -> tuple[int, int] | None:
+    """Jendela tahun kalender (inklusif) sisi PASCA-izin yg bisa diperiksa
+    thd sawit DAN penyebut Hansen-nya: iup_year..2021 (dipotong 2021 krn
+    Descals berhenti di situ; sisa 2022-2025 tetap "tak terperiksa" spt
+    loss_2022_2025_ha, TAK masuk jendela ini). Dipakai utk DUA hal sekaligus
+    (pembilang sawit loss_sawit_pasca_izin_2021_ha DAN penyebut Hansen
+    loss_pasca_izin_2021_ha) dgn definisi jendela yg SAMA PERSIS, supaya
+    "persen sawit pasca" (dihitung di view wiup_master) apple-to-apple. None
+    kalau iup_year None ATAU jendela kosong (mis. iup_year > 2021)."""
+    if iup_year is None:
+        return None
+    awal = max(iup_year, 2001)
+    if awal > TAHUN_MAKS_DESCALS_KALENDER:
+        return None
+    return (awal, TAHUN_MAKS_DESCALS_KALENDER)
+
+
+def _jumlah_jendela(per_tahun: dict[int, float], jendela: tuple[int, int] | None) -> float:
+    """Σ per_tahun.get(y, 0.0) utk y dlm [jendela[0], jendela[1]] inklusif;
+    0.0 kalau jendela None (jendela KOSONG krn iup_year di luar rentang —
+    beda dari "tak diketahui", yg ditangani di level pemanggil dgn None)."""
+    if jendela is None:
+        return 0.0
+    awal, akhir = jendela
+    return sum(per_tahun.get(y, 0.0) for y in range(awal, akhir + 1))
+
+
+def hitung_sawit_pra_pasca(tol2th_by_year: dict[int, float], iup_year: int | None
+                            ) -> tuple[float | None, float | None]:
+    """(loss_sawit_pra_izin_ha, loss_sawit_pasca_izin_2021_ha) dari pecahan
+    tahunan tol2th_by_year (atribusi_sawit_yearly) SATU konsesi. (None, None)
+    kalau iup_year None (spec: iup_year NULL -> ketiga kolom silang NULL).
+    INVARIAN: pra + pasca_2021 = window loss_sawit_tol2th_ha penuh (2001-2021)
+    krn kedua jendela bersebelahan tanpa celah/tindih — diverifikasi
+    cek_konsistensi_silang_izin() sebelum tabel ditulis."""
+    if iup_year is None:
+        return None, None
+    pra = _jumlah_jendela(tol2th_by_year, jendela_pra_izin(iup_year))
+    pasca = _jumlah_jendela(tol2th_by_year, jendela_pasca_izin_2021(iup_year))
+    return pra, pasca
+
+
+def hitung_loss_pasca_izin_2021(loss_hansen_by_year: dict[int, float], iup_year: int | None
+                                 ) -> float | None:
+    """loss_pasca_izin_2021_ha: total kehilangan Hansen (BUKAN sawit; dari
+    wiup_loss_yearly, TANPA pemindaian raster baru) pd jendela iup_year..2021
+    — penyebut "loss bersih pasca-izin s/d 2021" (view wiup_master). None
+    kalau iup_year None."""
+    if iup_year is None:
+        return None
+    return _jumlah_jendela(loss_hansen_by_year, jendela_pasca_izin_2021(iup_year))
+
+
+def cek_konsistensi_silang_izin(hasil: dict[str, dict],
+                                 iup_year_by_kode: dict[str, int | None]) -> list[str]:
+    """pra + pasca_2021 HARUS = window loss_sawit_tol2th_ha per konsesi (eksak
+    dari sumber sama — pecahan tahunan yg sama, dua jendela bersebelahan tanpa
+    celah), toleransi pembulatan 0,01 ha. Dipanggil main() SEBELUM tulis
+    tabel; galat membatalkan seluruh run (spec Task F15)."""
+    galat = []
+    for kode, b in hasil.items():
+        iup_year = iup_year_by_kode.get(kode)
+        if iup_year is None:
+            continue
+        pra, pasca = hitung_sawit_pra_pasca(b.get("tol2th_by_year", {}), iup_year)
+        total = b.get("sawit_m2_ha", 0.0) or 0.0
+        jumlah = (pra or 0.0) + (pasca or 0.0)
+        d = total - jumlah
+        if abs(d) > 0.01:
+            galat.append(
+                f"{kode}: pra+pasca_2021={jumlah:,.4f} ha vs window tol2th="
+                f"{total:,.4f} ha (beda {d:+.4f})")
+    return galat
+
+
+def cek_konsistensi_pasca_hansen(hasil: dict[str, dict],
+                                  iup_year_by_kode: dict[str, int | None],
+                                  loss_hansen_by_kode: dict[str, dict[int, float]]
+                                  ) -> list[str]:
+    """loss_pasca_izin_2021_ha (dari wiup_loss_yearly, jendela iup_year..2021)
+    tak boleh melebihi loss_2001_2021_ha (dari raster, jendela PENUH 2001-2021,
+    kolom yg sama) — pasca adalah SUBSET jendela penuh; dua sumber (CSV batch
+    vs raster langsung) sudah diverifikasi beda tipis krn efek tepi rasterisasi
+    di cek_jendela() (lihat ambang()). Galat kalau selisih > ambang(total)."""
+    galat = []
+    for kode, b in hasil.items():
+        iup_year = iup_year_by_kode.get(kode)
+        if iup_year is None:
+            continue
+        pasca_hansen = hitung_loss_pasca_izin_2021(
+            loss_hansen_by_kode.get(kode, {}), iup_year) or 0.0
+        total_2001_2021 = b.get("loss_2001_2021_ha", 0.0) or 0.0
+        selisih = pasca_hansen - total_2001_2021
+        if selisih > ambang(total_2001_2021):
+            galat.append(
+                f"{kode}: loss_pasca_izin_2021_ha={pasca_hansen:,.2f} ha > "
+                f"loss_2001_2021_ha={total_2001_2021:,.2f} ha (beda {selisih:+.2f})")
+    return galat
+
+
 # ── I/O raster ────────────────────────────────────────────────────────────────
 
 class DescalsCache:
@@ -345,13 +488,16 @@ def proses_konsesi_di_tile(poly, ls: rasterio.io.DatasetReader,
 
 SCHEMA = """
 CREATE TABLE atribusi_sawit (
-  kode_wiup                TEXT PRIMARY KEY REFERENCES wiup_geoportal(kode_wiup),
-  loss_2001_2021_ha        REAL,
-  loss_sawit_tol2th_ha     REAL,
-  loss_sawit_jeda5th_ha    REAL,
-  loss_sawit_tahunsama_ha  REAL,
-  loss_2022_2025_ha        REAL,
-  n_tile_hansen            INTEGER
+  kode_wiup                      TEXT PRIMARY KEY REFERENCES wiup_geoportal(kode_wiup),
+  loss_2001_2021_ha              REAL,
+  loss_sawit_tol2th_ha           REAL,
+  loss_sawit_jeda5th_ha          REAL,
+  loss_sawit_tahunsama_ha        REAL,
+  loss_2022_2025_ha              REAL,
+  n_tile_hansen                  INTEGER,
+  loss_sawit_pra_izin_ha         REAL,
+  loss_sawit_pasca_izin_2021_ha  REAL,
+  loss_pasca_izin_2021_ha        REAL
 )
 """
 
@@ -419,7 +565,7 @@ def main(argv=None) -> int:
     con.row_factory = sqlite3.Row
     rows = con.execute(
         "SELECT kode_wiup, bbox_min_lon, bbox_min_lat, bbox_max_lon, bbox_max_lat, "
-        "geometry_geojson FROM wiup_geoportal ORDER BY kode_wiup").fetchall()
+        "geometry_geojson, iup_year FROM wiup_geoportal ORDER BY kode_wiup").fetchall()
     if args.limit:
         rows = rows[:args.limit]
     print(f"[atribusi-sawit] {len(rows)} konsesi minerba dimuat dari wiup_geoportal",
@@ -428,12 +574,14 @@ def main(argv=None) -> int:
     parsed = {}
     by_tile: dict[str, list[str]] = defaultdict(list)
     n_tile_map: dict[str, int] = {}
+    iup_year_map: dict[str, int | None] = {}
     for r in rows:
         kode = r["kode_wiup"]
         parsed[kode] = shape(json.loads(r["geometry_geojson"]))
         b = (r["bbox_min_lon"], r["bbox_min_lat"], r["bbox_max_lon"], r["bbox_max_lat"])
         tiles = gc.pick_tile(b[1], b[3], b[0], b[2])
         n_tile_map[kode] = len(tiles)
+        iup_year_map[kode] = r["iup_year"]
         for t in tiles:
             by_tile[t].append(kode)
 
@@ -518,6 +666,32 @@ def main(argv=None) -> int:
         con.close()
         return 1
 
+    # ── Task F15: silang dua sumbu pra/pasca-izin × sawit — DUA cek baru
+    # SEBELUM tabel ditulis (spec F15) ─────────────────────────────────────────
+    galat_silang = cek_konsistensi_silang_izin(hasil_final, iup_year_map)
+    if galat_silang:
+        print(f"GAGAL: {len(galat_silang)} baris pra+pasca_2021 != window tol2th, contoh:",
+              file=sys.stderr)
+        for g in galat_silang[:5]:
+            print(f"    {g}", file=sys.stderr)
+        con.close()
+        return 1
+
+    # loss_pasca_izin_2021_ha dihitung dari wiup_loss_yearly (TANPA pemindaian
+    # raster baru, spec F15) — dimuat sekali di sini, dipakai cek + tulis tabel.
+    loss_hansen_by_kode: dict[str, dict[int, float]] = defaultdict(dict)
+    for kode, y, v in con.execute("SELECT kode_wiup, year, loss_ha FROM wiup_loss_yearly"):
+        loss_hansen_by_kode[kode][y] = v
+
+    galat_pasca = cek_konsistensi_pasca_hansen(hasil_final, iup_year_map, loss_hansen_by_kode)
+    if galat_pasca:
+        print(f"GAGAL: {len(galat_pasca)} baris loss_pasca_izin_2021_ha > loss_2001_2021_ha, contoh:",
+              file=sys.stderr)
+        for g in galat_pasca[:5]:
+            print(f"    {g}", file=sys.stderr)
+        con.close()
+        return 1
+
     # ── Tulis tabel ───────────────────────────────────────────────────────────
     con.execute("DROP TABLE IF EXISTS atribusi_sawit")
     con.execute(SCHEMA)
@@ -529,12 +703,18 @@ def main(argv=None) -> int:
     for kode in parsed:
         a = hasil_final[kode]
         l21 = a["loss_2001_2021_ha"]
+        iup_year = iup_year_map.get(kode)
+        pra, pasca_2021 = hitung_sawit_pra_pasca(a.get("tol2th_by_year", {}), iup_year)
+        pasca_hansen = hitung_loss_pasca_izin_2021(loss_hansen_by_kode.get(kode, {}), iup_year)
         con.execute(
-            "INSERT INTO atribusi_sawit VALUES (?,?,?,?,?,?,?)",
+            "INSERT INTO atribusi_sawit VALUES (?,?,?,?,?,?,?,?,?,?)",
             (kode, round(l21, 4),
              round(a["sawit_m2_ha"], 4), round(a["sawit_0_5_ha"], 4),
              round(a["sawit_0_ha"], 4),
-             round(a["loss_2022_2025_ha"], 4), n_tile_map[kode]))
+             round(a["loss_2022_2025_ha"], 4), n_tile_map[kode],
+             round(pra, 4) if pra is not None else None,
+             round(pasca_2021, 4) if pasca_2021 is not None else None,
+             round(pasca_hansen, 4) if pasca_hansen is not None else None))
         n_ditulis += 1
         for y in sorted(a.get("tol2th_by_year", {})):
             val = round(a["tol2th_by_year"][y], 4)
@@ -560,6 +740,18 @@ def main(argv=None) -> int:
               f"({100*t_tahunsama/t_loss:.1f}%)")
         print(f"total loss_sawit_jeda5th_ha    : {t_jeda5th:,.0f}  ({100*t_jeda5th/t_loss:.1f}%)")
     print(f"total loss_2022_2025_ha (tak terperiksa thd sawit): {t_2225:,.0f}")
+
+    t_pra, t_pasca2021, t_pasca_hansen = con.execute(
+        "SELECT SUM(loss_sawit_pra_izin_ha), SUM(loss_sawit_pasca_izin_2021_ha), "
+        "SUM(loss_pasca_izin_2021_ha) FROM atribusi_sawit").fetchone()
+    t_pra = t_pra or 0.0
+    t_pasca2021 = t_pasca2021 or 0.0
+    print(f"\n[F15] total loss_sawit_pra_izin_ha         : {t_pra:,.0f}")
+    print(f"[F15] total loss_sawit_pasca_izin_2021_ha  : {t_pasca2021:,.0f}")
+    print(f"[F15] pra + pasca_2021                     : {t_pra + t_pasca2021:,.0f}  "
+          f"(harus = total loss_sawit_tol2th_ha di atas)")
+    print(f"[F15] total loss_pasca_izin_2021_ha (penyebut Hansen pasca) : "
+          f"{(t_pasca_hansen or 0.0):,.0f}")
 
     print("\nper komoditas (varian loss_sawit_tol2th_ha = patokan):")
     per_kom = con.execute("""

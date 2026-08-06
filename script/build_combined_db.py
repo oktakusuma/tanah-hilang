@@ -98,13 +98,16 @@ def to_int(v, default=None):
 # supaya rerun tak menimpa data yang sudah ditulis skrip lapisan.
 LAPISAN_SHELLS = """
 CREATE TABLE IF NOT EXISTS atribusi_sawit (
-  kode_wiup                TEXT PRIMARY KEY REFERENCES wiup_geoportal(kode_wiup),
-  loss_2001_2021_ha        REAL,
-  loss_sawit_tol2th_ha     REAL,
-  loss_sawit_jeda5th_ha    REAL,
-  loss_sawit_tahunsama_ha  REAL,
-  loss_2022_2025_ha        REAL,
-  n_tile_hansen            INTEGER
+  kode_wiup                      TEXT PRIMARY KEY REFERENCES wiup_geoportal(kode_wiup),
+  loss_2001_2021_ha              REAL,
+  loss_sawit_tol2th_ha           REAL,
+  loss_sawit_jeda5th_ha          REAL,
+  loss_sawit_tahunsama_ha        REAL,
+  loss_2022_2025_ha              REAL,
+  n_tile_hansen                  INTEGER,
+  loss_sawit_pra_izin_ha         REAL,
+  loss_sawit_pasca_izin_2021_ha  REAL,
+  loss_pasca_izin_2021_ha        REAL
 );
 
 CREATE TABLE IF NOT EXISTS klasifikasi_izin (
@@ -525,12 +528,34 @@ def step_indexes(conn):
     print(f"     ✓ {len(indexes)} indexes created", file=sys.stderr)
 
 
+def _drop_stale_empty_lapisan_shell(conn, table, expected_cols):
+    """LAPISAN_SHELLS pakai `CREATE TABLE IF NOT EXISTS` supaya DB tanpa
+    attribution_sawit.py (mis. data-full/kalimantan.db, yang skrip itu TIDAK
+    disentuh — "hanya data/", lihat rescrape/process.sh) tetap punya cangkang
+    kosong utk wiup_master. Tapi IF NOT EXISTS berarti skema LAMA tak pernah
+    ikut naik kalau kolomnya berubah (Task F15 menambah 3 kolom) — cangkang
+    lama akan bikin CREATE VIEW gagal DIQUERY (SQLite lazy-resolve kolom view).
+    Aman dibongkar HANYA kalau tabelnya KOSONG (0 baris) — data ASLI dari
+    attribution_sawit.py (825 baris di data/kalimantan.db) tak pernah kosong,
+    jadi ini TAK PERNAH menghapus data nyata, hanya cangkang audit yang belum
+    diisi pipeline sawit."""
+    cur = conn.cursor()
+    cols = {r[1] for r in cur.execute(f'PRAGMA table_info("{table}")')}
+    if not cols or not (expected_cols - cols):
+        return  # tabel belum ada (CREATE TABLE IF NOT EXISTS akan bikin skema baru) ATAU sudah skema baru
+    n = cur.execute(f'SELECT COUNT(*) FROM "{table}"').fetchone()[0]
+    if n == 0:
+        cur.execute(f'DROP TABLE "{table}"')
+
+
 def step_master_view(conn):
     """Create wiup_master VIEW joining all relevant tables (termasuk lapisan
     atribusi_sawit/klasifikasi_izin). Satu-satunya sumber definisi view —
     dipanggil dari main() (build penuh) maupun refresh_view() (--refresh-view)."""
     print(f"\n[7/7] Creating wiup_master view", file=sys.stderr)
     cur = conn.cursor()
+    _drop_stale_empty_lapisan_shell(conn, "atribusi_sawit", {
+        "loss_sawit_pra_izin_ha", "loss_sawit_pasca_izin_2021_ha", "loss_pasca_izin_2021_ha"})
     cur.executescript(LAPISAN_SHELLS)
     cur.execute("DROP VIEW IF EXISTS wiup_master")
     cur.execute("""
@@ -582,6 +607,15 @@ def step_master_view(conn):
             CASE WHEN s.loss_2001_2021_ha > 0
                  THEN ROUND(100.0 * s.loss_sawit_tol2th_ha / s.loss_2001_2021_ha, 2)
             END                                                              AS persen_sawit,
+            -- Task F15: silang dua sumbu pra/pasca-izin × sawit (passthrough +
+            -- 2 kolom "bersih" dihitung di sini, satu-satunya sumber definisi).
+            s.loss_sawit_pra_izin_ha, s.loss_sawit_pasca_izin_2021_ha,
+            s.loss_pasca_izin_2021_ha,
+            CASE WHEN g.iup_year IS NOT NULL AND g.iup_year <= 2022
+                 THEN ROUND(t.loss_pre_iup_ha - s.loss_sawit_pra_izin_ha, 2)
+            END                                                              AS loss_pra_izin_bersih_ha,
+            ROUND(s.loss_pasca_izin_2021_ha - s.loss_sawit_pasca_izin_2021_ha, 2)
+                                                                               AS loss_pasca_izin_2021_bersih_ha,
             z.kelas  AS kelas_izin, z.bukti AS bukti_izin, z.dasar AS dasar_kelas,
             z.durasi_sk, z.masa_berlaku_diwarisi, z.pra_izin_dominan
         FROM wiup_geoportal g

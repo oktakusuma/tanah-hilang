@@ -36,9 +36,14 @@ Tanah Hilang/
 
 **Tidak** disertakan (dihasilkan/diunduh saat menjalankan):
 - Raster Hansen (~1,3 GB) — diunduh oleh `download_hansen.py` (langkah 1).
+- Raster Descals sawit (~146 MB) — diunduh oleh `fetch_descals.py` (prasyarat langkah 8 & 10).
 - `data-full/kalimantan.db`, `data/kalimantan.db`, `data/analysis/*` — output pipeline.
-- `stata/` — **data panel penelitian (belum dipublikasikan)**; hanya dipakai
-  langkah 8 yang bersifat opsional. Semua langkah lain berjalan tanpanya.
+
+> Paket ini **tidak** menyertakan `stata/` (panel penelitian tesis, belum
+> dipublikasikan) — sejak F17a langkah pemuatannya (`import_exposure_panel.py`
+> beserta tabel `exposure_kabupaten`) sudah **dihapus** dari pipeline utama;
+> tak ada lagi langkah opsional yang membutuhkannya. Semua 13 langkah di bawah
+> berjalan tanpa `stata/`.
 
 ---
 
@@ -48,10 +53,11 @@ Tanah Hilang/
 - Dependensi:
   ```bash
   python3 -m venv .venv
-  .venv/bin/pip install rasterio shapely numpy scipy pandas matplotlib
+  .venv/bin/pip install rasterio shapely numpy scipy matplotlib
   ```
-  (`scipy` dipakai uji signifikansi di langkah 9; `pandas` hanya untuk langkah 8
-  yang opsional; `matplotlib` hanya untuk grafik opsional.)
+  (`scipy` dipakai uji signifikansi di `build_periode_tables.py`, langkah 11;
+  `matplotlib` hanya untuk grafik opsional `make_charts.py`/`trend_analysis.py`,
+  di luar 13 langkah.)
 
 Jalankan semua perintah **dari folder `Tanah Hilang/`** (skrip memakai path
 relatif seperti `data/...`).
@@ -62,10 +68,11 @@ BPS** (batas & kepadatan kabupaten).
 
 ---
 
-## 3. Pipeline (9 langkah inti)
+## 3. Pipeline (13 langkah — sinkron dengan `rescrape/process.sh` repo utama)
 
 Data WIUP & MinerbaOne **sudah disertakan** (langkah scrape sudah dilakukan),
-jadi mulai dari langkah 1 di bawah.
+jadi mulai dari langkah 1 di bawah. Urutan & penomoran mengikuti persis
+`rescrape/process.sh` di repo utama (13 langkah, tanpa panel penelitian/exposure).
 
 **1 — Unduh raster Hansen (~1,3 GB)**
 ```bash
@@ -118,25 +125,54 @@ python script/filter_minerba.py \
 → **`data/kalimantan.db`** (±825 WIUP). Membuang galian C/batuan (pasir, andesit,
 batu, tanah); menyisakan batubara + mineral logam. Registry perusahaan tetap utuh.
 
-> Langkah 8–9 **wajib dijalankan SETELAH langkah 7** — `filter_minerba` membangun
-> ulang `data/kalimantan.db` dari nol, sehingga tabel hasil langkah 8–9 ikut
+> Langkah 8–13 **wajib dijalankan SETELAH langkah 7** — `filter_minerba` membangun
+> ulang `data/kalimantan.db` dari nol, sehingga tabel hasil langkah 8–13 ikut
 > terhapus bila urutannya terbalik.
 
-**8 — *(OPSIONAL)* Muat panel penelitian (paparan sentralisasi per kabupaten)**
-
-> Butuh berkas panel penelitian `stata/Data all v0.7.dta` yang **tidak
-> disertakan** dalam paket ini (data penelitian belum dipublikasikan). Lewati
-> langkah ini bila tak memilikinya — langkah 9 dan semua langkah lain **tidak
-> bergantung** padanya; hanya tabel `exposure_kabupaten` yang tak terbentuk.
-
+Sebelum langkah 8, unduh raster Descals sawit (~146 MB, sekali saja):
 ```bash
-python script/import_exposure_panel.py \
-       --dta "stata/Data all v0.7.dta" --db data/kalimantan.db
+python script/fetch_descals.py    # -> data/external/descals/ (raster mentah, CC-BY-4.0)
 ```
-→ tabel **`exposure_kabupaten`** (56 kab: `exp_sentralisasi`/`exp_coal`/`exp_z`;
-22 kabupaten "kontrol murni" ber-exp=0).
+Kalau dilewati, langkah 8 & 10 di bawah **otomatis dilewati** (skrip mengecek
+keberadaan `data/external/descals/tiles`) dan `data/kalimantan.db` tetap valid
+tanpa lapisan sawit — tak mengubah angka utama (1.603.251 ha).
 
-**9 — Bangun tabel analisis 3 periode kewenangan izin**
+**8 — Atribusi ke konversi sawit (Descals)** *(dilewati otomatis bila raster
+Descals tak ada)*
+```bash
+python script/attribution_sawit.py --db data/kalimantan.db
+```
+→ tabel **`atribusi_sawit`** + **`atribusi_sawit_yearly`**. Sebagian kehilangan
+tutupan pohon di dalam batas WIUP bisa jadi sebenarnya konversi ke kelapa
+sawit, bukan pembukaan tambang — diuji dengan peta tahun-tanam sawit Descals
+dkk. (2024) ("Global mapping of oil palm planting year from 1990 to 2021",
+*Earth System Science Data* 16:5111-5129, doi:10.5194/essd-16-5111-2024). Data
+raster: Zenodo doi:10.5281/zenodo.13379129 (v1.2), lisensi **CC-BY-4.0**
+(atribusi saja, tanpa ShareAlike). Cakupan tahun tanam 1990–2021.
+`atribusi_sawit` menyimpan, per konsesi: 3 varian jendela toleransi window
+penuh 2001–2021 (`loss_sawit_tol2th_ha`/`_jeda5th_ha`/`_tahunsama_ha`), sisa
+2022–2025 (`loss_2022_2025_ha`), **serta 3 kolom silang sawit × pra/pasca-izin**
+(`loss_sawit_pra_izin_ha`, `loss_sawit_pasca_izin_2021_ha`,
+`loss_pasca_izin_2021_ha`) yang memisahkan sawit dari efek pra/pasca-terbitnya-izin.
+
+**9 — Klasifikasi izin pertama vs perpanjangan**
+```bash
+python script/klasifikasi_perpanjangan.py --db data/kalimantan.db
+```
+→ tabel **`klasifikasi_izin`**. Menguji apakah `iup_year` (dasar pengelompokan
+3 periode kewenangan) benar-benar berarti "tahun izin pertama terbit", memakai
+data registri sendiri (jenis izin, durasi SK) — tanpa sumber luar.
+
+**10 — Tile piksel sawit untuk peta** *(dilewati otomatis bila raster Descals
+tak ada)*
+```bash
+python script/gen_descals_tiles.py
+```
+→ `data/tiles/descals/*.png` (tile XYZ, dipakai toggle sawit di peta web).
+`gen_descals_tiles.py` meng-`import` `DESCALS_DIR` dari `attribution_sawit.py`
+(harus berada di folder `script/` yang sama).
+
+**11 — Bangun tabel analisis 3 periode kewenangan izin**
 ```bash
 python script/build_periode_tables.py --db data/kalimantan.db
 ```
@@ -148,60 +184,34 @@ izin 1998–2025 (4 konsesi `iup_year` 2026 + 7 tanpa tahun dikeluarkan → 814/
 dianalisis), deforestasi 2001–2025. Isinya: ringkasan per periode, deforestasi
 tahunan (slope OLS), event-study (waktu relatif ke izin), kontrol komoditas,
 distribusi ukuran (Gini/share top-10%), dan uji signifikansi Kruskal–Wallis +
-Mann–Whitney (Holm).
+Mann–Whitney (Holm). Dijalankan **terakhir** di antara langkah 8–11 karena ia
+yang menulis provenansi (`analysis_meta`/`column_meta`) untuk seluruh lapisan,
+termasuk `atribusi_sawit` dan `klasifikasi_izin` (varian `periode_*_bersih`
+dibangun dari lapisan sawit bila terisi).
 
-### Langkah pelengkap & opsional
+**12 — Sinkronisasi geojson (untuk QGIS)**
+```bash
+python script/sync_geojson_from_db.py
+```
+→ regenerasi `data/wiup/kalimantan_with_loss.geojson` (825 konsesi + loss per
+tahun) langsung dari `kalimantan.db` — dipakai panduan QGIS.
+
+**13 — Perbarui angka narasi dashboard (JSON)**
+```bash
+python script/gen_dashboard_stats.py
+```
+→ `webapp/src/generated/dashboard-stats.json` (dibuat otomatis walau folder
+`webapp/` tak ada di paket ini). Berkas ini sumber satu-satunya angka narasi
+frontend repo utama (loss total, %, jumlah konsesi, dsb.) — di bundel ini
+langkah 13 opsional untuk dijalankan (tak ada `webapp/` yang membacanya),
+tapi disertakan supaya urutan tetap identik dengan `rescrape/process.sh`.
+
+### Langkah pelengkap & opsional (di luar 13 langkah)
 
 - **`prep_bps_boundaries.py`** — *(opsional)* bangun ulang batas kabupaten dari
   geoBoundaries. Hasilnya sudah disertakan.
-- **`sync_geojson_from_db.py`** — *(pelengkap)* regenerasi
-  `data/wiup/kalimantan_with_loss.geojson` (825 konsesi + loss per tahun)
-  langsung dari `kalimantan.db` — dipakai panduan QGIS.
 - **`make_charts.py` + `trend_analysis.py`** — *(opsional)* figur PNG + uji tren
   Mann-Kendall untuk naskah; tidak dipakai web app.
-
----
-
-## 3a. Lapisan tambahan: atribusi sawit (Descals) + klasifikasi izin
-
-Dua uji tambahan di atas basis data default (langkah 7). Keduanya *opsional*
-dalam arti tidak mengubah angka utama (1.603.251 ha), tapi memperkaya
-interpretasinya:
-
-- **Atribusi ke konversi sawit** — sebagian kehilangan tutupan pohon di dalam
-  batas WIUP bisa jadi sebenarnya konversi ke kelapa sawit, bukan pembukaan
-  tambang. Diuji dengan peta tahun-tanam sawit Descals dkk. (2024)
-  ("Global mapping of oil palm planting year from 1990 to 2021", *Earth System
-  Science Data* 16:5111-5129, doi:10.5194/essd-16-5111-2024). Data raster:
-  Zenodo doi:10.5281/zenodo.13379129 (v1.2), lisensi **CC-BY-4.0** (atribusi
-  saja, tanpa ShareAlike). Cakupan tahun tanam 1990–2021.
-- **Klasifikasi izin pertama vs perpanjangan** — menguji apakah `iup_year`
-  (dasar pengelompokan 3 periode kewenangan) benar-benar berarti "tahun izin
-  pertama terbit", memakai data registri sendiri (jenis izin, durasi SK) —
-  tanpa sumber luar.
-
-**Prasyarat**: `rasterio` + `numpy` — sudah termasuk daftar dependensi dasar di
-§2, tidak perlu instalasi tambahan.
-
-**Urutan menjalankan** (setelah langkah 7 — `data/kalimantan.db` default sudah ada):
-```bash
-python script/fetch_descals.py               # unduh raster Descals (Zenodo, ~146 MB) ke data/external/descals/
-python script/attribution_sawit.py --db data/kalimantan.db     # -> tabel atribusi_sawit + atribusi_sawit_yearly
-python script/klasifikasi_perpanjangan.py --db data/kalimantan.db  # -> tabel klasifikasi_izin
-python script/gen_descals_tiles.py            # -> data/tiles/descals/*.png (tile XYZ, untuk peta web)
-python script/build_periode_tables.py --db data/kalimantan.db  # bangun ulang tabel periode_* (varian *_bersih dari sawit + analysis_meta/column_meta)
-```
-
-> `build_periode_tables.py` dijalankan **terakhir** — ia yang menulis provenansi
-> (`analysis_meta`/`column_meta`) untuk seluruh lapisan, termasuk `atribusi_sawit`
-> dan `klasifikasi_izin`. `gen_descals_tiles.py` meng-`import` `DESCALS_DIR` dari
-> `attribution_sawit.py` (harus berada di folder `script/` yang sama), sehingga
-> harus dijalankan setelah `fetch_descals.py`, urutan sebelum/sesudah
-> `attribution_sawit.py` sendiri tidak masalah.
-
-**Output tambahan** (tidak disertakan dalam paket, dihasilkan saat pipeline
-dijalankan): `data/external/descals/` (raster mentah Descals), `data/tiles/descals/`
-(tile PNG hasil render). Keduanya sudah masuk `.gitignore`.
 
 ---
 
@@ -237,11 +247,10 @@ antimoni, intan). Sisanya (pasir/batu/tanah/kuarsa) hanya ada di versi lengkap.
 | `kepadatan_penduduk` | 56 kab/kota, BPS 2015–2024 |
 | view `wiup_master` | gabungan semua (dibaca API/web) |
 
-**Tabel analisis** (langkah 8–9; turunan — bisa dibangun ulang kapan pun):
+**Tabel analisis** (langkah 11; turunan — bisa dibangun ulang kapan pun):
 
 | Tabel | Isi |
 |---|---|
-| `exposure_kabupaten` | *(hanya bila langkah 8 dijalankan)* paparan sentralisasi 2020 per kabupaten |
 | `periode_ringkasan` | ringkasan per periode: n, luas, loss, %poligon, %akselerasi, korelasi |
 | `periode_deforestasi_tahunan` | loss per periode per tahun kalender 2001–2025 (kohort penuh) |
 | `periode_tahunan_aktif` | deret stok izin-aktif per periode-tahun (loss, n, luas, hutan-2000, loss kumulatif) |
@@ -254,14 +263,14 @@ antimoni, intan). Sisanya (pasir/batu/tanah/kuarsa) hanya ada di versi lengkap.
 | `analysis_meta` | **provenance** semua tabel (sumber, metode, skrip) |
 | `column_meta` | **kamus kolom**: arti + rumus + sumber tiap kolom (semua tabel/view) — untuk tab Skema halaman Database |
 
-**Tabel lapisan tambahan** (§3a; cangkangnya dibuat di langkah 5 lewat
+**Tabel lapisan tambahan** (langkah 8–10; cangkangnya dibuat di langkah 5 lewat
 `LAPISAN_SHELLS`, diisi oleh `attribution_sawit.py` / `klasifikasi_perpanjangan.py`
 — urutan langkah pipeline tak menentukan, `wiup_master` tetap valid walau
 lapisan belum diisi):
 
 | Tabel | Isi |
 |---|---|
-| `atribusi_sawit` | per konsesi (825 baris): pecahan loss yang beririsan dgn tahun-tanam sawit Descals (3 varian jendela toleransi) |
+| `atribusi_sawit` | per konsesi (825 baris): pecahan loss yang beririsan dgn tahun-tanam sawit Descals (3 varian jendela toleransi, window 2001–2021) + 3 kolom silang sawit × pra/pasca-izin (`loss_sawit_pra_izin_ha`, `loss_sawit_pasca_izin_2021_ha`, `loss_pasca_izin_2021_ha`) |
 | `atribusi_sawit_yearly` | pecahan `atribusi_sawit` per (kode_wiup, tahun) — dasar varian `periode_*_bersih` |
 | `klasifikasi_izin` | per konsesi: vonis IZIN_PERTAMA / PERPANJANGAN / TAK_DINILAI + kekuatan bukti |
 
