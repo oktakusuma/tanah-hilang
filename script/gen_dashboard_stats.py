@@ -205,12 +205,33 @@ def lapisan(db_path: Path) -> dict | None:
 
 
 def registry(db_path: Path) -> dict:
-    """Company-registry figures (shared, same in both DBs)."""
+    """Company-registry figures (shared, same in both DBs) + snapshot struktur
+    DB (jumlah tabel/view/indeks, ukuran berkas) — dipakai §05 Metodologi
+    ("Dari basis data ke dashboard"). Snapshot ini BERUBAH kalau objek DB
+    berubah (tabel ditambah/dihapus, indeks baru) — makanya dihitung di sini,
+    bukan ditulis literal di komponen React (F17a r1: '28 tabel · 40 indeks'
+    basi setelah drop exposure_kabupaten, dan hitungan indeks ternyata sudah
+    lama salah).
+    """
     conn = sqlite3.connect(db_path)
     bu = conn.execute("SELECT COUNT(*) FROM badan_usaha").fetchone()[0]
     izin = conn.execute("SELECT COUNT(*) FROM perizinan").fetchone()[0]
+    n_tabel = conn.execute(
+        "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'"
+    ).fetchone()[0]
+    n_view = conn.execute(
+        "SELECT COUNT(*) FROM sqlite_master WHERE type='view' AND name NOT LIKE 'sqlite_%'"
+    ).fetchone()[0]
+    n_indeks = conn.execute(
+        "SELECT COUNT(*) FROM sqlite_master WHERE type='index' AND name NOT LIKE 'sqlite_%'"
+    ).fetchone()[0]
     conn.close()
-    return {"badan_usaha": bu, "perizinan": izin}
+    db_size_mb = round(db_path.stat().st_size / (1024 * 1024))
+    return {
+        "badan_usaha": bu, "perizinan": izin,
+        "n_tabel": n_tabel, "n_view": n_view, "n_indeks": n_indeks,
+        "db_size_mb": db_size_mb,
+    }
 
 
 def main() -> int:

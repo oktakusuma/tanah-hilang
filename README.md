@@ -40,7 +40,7 @@ Tanah Hilang/
 - `data-full/kalimantan.db`, `data/kalimantan.db`, `data/analysis/*` — output pipeline.
 
 > Paket ini **tidak** menyertakan `stata/` (panel penelitian tesis, belum
-> dipublikasikan) — sejak F17a langkah pemuatannya (`import_exposure_panel.py`
+> dipublikasikan) — langkah pemuatannya (`import_exposure_panel.py`
 > beserta tabel `exposure_kabupaten`) sudah **dihapus** dari pipeline utama;
 > tak ada lagi langkah opsional yang membutuhkannya. Semua 13 langkah di bawah
 > berjalan tanpa `stata/`.
