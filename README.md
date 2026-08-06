@@ -35,8 +35,8 @@ Tanah Hilang/
 ```
 
 **Tidak** disertakan (dihasilkan/diunduh saat menjalankan):
-- Raster Hansen (~1,3 GB) — diunduh oleh `download_hansen.py` (langkah 1).
-- Raster Descals sawit (~146 MB) — diunduh oleh `fetch_descals.py` (prasyarat langkah 8 & 11).
+- Raster Hansen (~1,3 GB) — diunduh oleh `download_hansen.py` (langkah 4).
+- Raster Descals sawit (~146 MB) — diunduh oleh `fetch_descals.py` (prasyarat langkah 10 & 13).
 - `data-full/kalimantan.db`, `data/kalimantan.db`, `data/analysis/*` — output pipeline.
 
 > Paket ini **tidak** menyertakan `stata/` (panel penelitian tesis, belum
