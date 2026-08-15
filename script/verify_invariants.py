@@ -86,6 +86,19 @@ KOLOM_NON_NEGATIF = {
                              "sum_tanpa_sawit_sampai_2021_ha",
                              "mean_tanpa_sawit_sampai_2021_ha"],
     "backtrack_tahunan": ["loss_ha", "loss_tanpa_sawit_ha", "hutan_awal_tahun_ha"],
+    # Irisan halaman Statistik (Fase C 16 Agu).
+    "backtrack_wilayah": ["n_konsesi", "luas_sk_ha", "hutan_2009_ha",
+                          "loss_mulai_aktif_sampai_2025_ha",
+                          "loss_mulai_aktif_sampai_2021_tanpa_sawit_ha",
+                          "pct_hutan2009_mulai_aktif_sampai_2025"],
+    "backtrack_komoditas_rinci": ["n_konsesi", "luas_sk_ha", "hutan_2009_ha",
+                                  "loss_mulai_aktif_sampai_2025_ha",
+                                  "loss_mulai_aktif_sampai_2021_tanpa_sawit_ha",
+                                  "pct_hutan2009_mulai_aktif_sampai_2025"],
+    "backtrack_konsesi_top": ["loss_mulai_aktif_sampai_2025_ha",
+                              "pct_hutan2009_mulai_aktif_sampai_2025"],
+    "backtrack_keparahan": ["n_konsesi", "n_tanpa_penyebut"],
+    "backtrack_zona_bebas": ["n_kab_ada_konsesi", "n_kab_bersih"],
 }
 TABEL_NON_NEGATIF_LIGHT = ("wiup_loss", "wiup_loss_yearly", "wiup_temporal")
 
@@ -248,6 +261,10 @@ def cek_non_negatif(con, lap, tabel_saja=None):
     pelanggar = []
     for tabel, kolom2 in KOLOM_NON_NEGATIF.items():
         if tabel_saja is not None and tabel not in tabel_saja:
+            continue
+        # Tabel bisa absen di DB generasi lama / varian (mis. backtrack_* Fase C
+        # belum di-rebuild) — dilewati, bukan menjatuhkan seluruh pemeriksaan.
+        if not tabel_ada(con, tabel):
             continue
         for kolom in kolom2:
             n = satu(con, f"SELECT COUNT(*) FROM {tabel} WHERE {kolom} < 0")
@@ -754,6 +771,104 @@ def cek_backtrack(con, lap):
                      f"{n_gini} baris gini_luas_aktif di luar [0,1]")
         else:
             lap.ok("backtrack-kalender-gini", "gini_luas_aktif ∈ [0,1] semua baris")
+
+    # ── 7) Irisan halaman Statistik (Fase C 16 Agu) ────────────────────────
+    # Semua irisan baru memotong POPULASI YANG SAMA (konsesi ber-mulai versi
+    # aturan <= 2025) dgn jendela yang sama, jadi hektarnya WAJIB rekonsil ke
+    # angka aturan itu — kalau tidak, halaman Statistik & Komparasi akan
+    # menampilkan dua angka berbeda untuk hal yang sama.
+    if not tabel_ada(con, "backtrack_wilayah"):
+        lap.warn("backtrack-wilayah-rekonsil", "backtrack_wilayah absen — dilewati")
+    else:
+        beda = []
+        for (aturan, total) in con.execute(
+            "SELECT aturan, loss_mulai_aktif_sampai_2025_ha FROM backtrack_wilayah "
+            "WHERE tingkat='total'"
+        ).fetchall():
+            # (a) Σ provinsi = Σ kabupaten = baris total (tol 1 ha: kabupaten
+            #     dibagi rata per konsesi lintas-kabupaten → sisa pembulatan).
+            for tingkat in ("provinsi", "kabupaten"):
+                s = satu(con, "SELECT SUM(loss_mulai_aktif_sampai_2025_ha) "
+                              "FROM backtrack_wilayah WHERE aturan=? AND tingkat=?",
+                         (aturan, tingkat))
+                if s is None or abs(s - total) > 1.0:
+                    beda.append(f"{aturan}/{tingkat} {s} ≠ total {total}")
+            # (b) baris total = Σ backtrack_kohort aturan yang sama (jembatan ke
+            #     angka /era — satu sumber kebenaran lintas halaman).
+            k = satu(con, "SELECT SUM(loss_mulai_aktif_sampai_2025_ha) "
+                          "FROM backtrack_kohort WHERE aturan=?", (aturan,))
+            if k is None or abs(k - total) > 1.0:
+                beda.append(f"{aturan}/total {total} ≠ Σ kohort {k}")
+            # (c) komoditas rinci memotong populasi yang sama.
+            if tabel_ada(con, "backtrack_komoditas_rinci"):
+                m = satu(con, "SELECT SUM(loss_mulai_aktif_sampai_2025_ha) "
+                              "FROM backtrack_komoditas_rinci WHERE aturan=?", (aturan,))
+                if m is None or abs(m - total) > 1.0:
+                    beda.append(f"{aturan}/komoditas_rinci {m} ≠ total {total}")
+        if beda:
+            lap.fail("backtrack-wilayah-rekonsil", "; ".join(beda))
+        else:
+            n_at = satu(con, "SELECT COUNT(DISTINCT aturan) FROM backtrack_wilayah")
+            lap.ok("backtrack-wilayah-rekonsil",
+                   f"Σ provinsi = Σ kabupaten = Σ komoditas rinci = Σ kohort "
+                   f"utk {n_at} aturan (tol 1 ha)")
+
+    if not tabel_ada(con, "backtrack_zona_bebas"):
+        lap.warn("backtrack-zona-monoton", "backtrack_zona_bebas absen — dilewati")
+    else:
+        salah = satu(con, """SELECT COUNT(*) FROM backtrack_zona_bebas
+            WHERE n_kab_bersih < 0 OR n_kab_bersih > n_kab_total
+               OR n_kab_bersih + n_kab_ada_konsesi != n_kab_total""")
+        # Himpunan konsesi aktif hanya BERTAMBAH tiap tahun, jadi jumlah kab/kota
+        # bebas tak pernah naik. Naik = bug jam metode.
+        naik = satu(con, """SELECT COUNT(*) FROM backtrack_zona_bebas a
+            JOIN backtrack_zona_bebas b
+              ON b.aturan = a.aturan AND b.year = a.year + 1
+            WHERE b.n_kab_bersih > a.n_kab_bersih""")
+        if salah or naik:
+            lap.fail("backtrack-zona-monoton",
+                     f"{salah} baris cacah tak konsisten · {naik} pasang tahun n_kab_bersih naik")
+        else:
+            rentang = con.execute(
+                "SELECT MIN(n_kab_bersih), MAX(n_kab_bersih), MIN(n_kab_total) "
+                "FROM backtrack_zona_bebas").fetchone()
+            lap.ok("backtrack-zona-monoton",
+                   f"n_kab_bersih ∈ [{rentang[0]}, {rentang[1]}] dari {rentang[2]} kab/kota, "
+                   "monoton tak naik, cacah rekonsil")
+
+    if not tabel_ada(con, "backtrack_keparahan"):
+        lap.warn("backtrack-keparahan-rekonsil", "backtrack_keparahan absen — dilewati")
+    else:
+        # Σ ember + n_tanpa_penyebut = jumlah konsesi aktif s.d. 2025 aturan itu
+        # (backtrack_tahunan.n_aktif @ 2025) — tak boleh ada konsesi yang hilang
+        # diam-diam dari histogram.
+        beda2 = []
+        for aturan, s, tp in con.execute(
+            "SELECT aturan, SUM(n_konsesi), MAX(n_tanpa_penyebut) "
+            "FROM backtrack_keparahan GROUP BY aturan"
+        ).fetchall():
+            n_aktif = satu(con, "SELECT n_aktif FROM backtrack_tahunan "
+                                "WHERE aturan=? AND year=2025", (aturan,))
+            if n_aktif is None or (s or 0) + (tp or 0) != n_aktif:
+                beda2.append(f"{aturan}: {s}+{tp} ≠ n_aktif@2025 {n_aktif}")
+        if beda2:
+            lap.fail("backtrack-keparahan-rekonsil", "; ".join(beda2))
+        else:
+            lap.ok("backtrack-keparahan-rekonsil",
+                   "Σ ember + tanpa-penyebut = konsesi aktif @2025 (semua aturan)")
+
+    if tabel_ada(con, "backtrack_konsesi_top"):
+        # Peringkat wajib menurun & tak melebihi total aturannya.
+        rusak = satu(con, """SELECT COUNT(*) FROM backtrack_konsesi_top a
+            JOIN backtrack_konsesi_top b
+              ON b.aturan = a.aturan AND b.peringkat = a.peringkat + 1
+            WHERE b.loss_mulai_aktif_sampai_2025_ha > a.loss_mulai_aktif_sampai_2025_ha""")
+        if rusak:
+            lap.fail("backtrack-top-urut", f"{rusak} pasang peringkat tak menurun")
+        else:
+            n_top = satu(con, "SELECT COUNT(*) FROM backtrack_konsesi_top")
+            lap.ok("backtrack-top-urut",
+                   f"{n_top} baris peringkat menurun rapi di tiap aturan")
 
 
 def cek_stats(con, lap, stats_path):

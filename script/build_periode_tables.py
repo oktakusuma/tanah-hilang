@@ -335,6 +335,8 @@ COLUMN_META = [
     ("backtrack_komoditas", "n", "Konsesi sel ini yang tahun mulainya terdefinisi.", None, None),
     ("backtrack_komoditas", "loss_mulai_aktif_sampai_2025_ha", "Σ loss Hansen jendela [mulai aktif versi aturan, 2025] sel ini.", "Σ loss [mulai,2025]", "wiup_loss_yearly"),
     ("backtrack_komoditas", "loss_mulai_aktif_sampai_2021_tanpa_sawit_ha", "Σ max(0, loss−sawit) [mulai aktif, 2021] sel ini.", None, "wiup_loss_yearly × atribusi_sawit_yearly"),
+    ("backtrack_komoditas", "hutan_2009_ha", "Σ hutan acuan 2009 sel ini — penyebut intensitas kerangka era Minerba (Fase C 16 Agu; sebelumnya intensitas komoditas berpenyebut hutan 2000). NULL bila wiup_loss.hutan_2009_ha absen.", "Σ hutan_2009_ha", "wiup_loss.hutan_2009_ha"),
+    ("backtrack_komoditas", "pct_hutan2009_mulai_aktif_sampai_2025", "100 · loss_mulai_aktif_sampai_2025_ha / hutan_2009_ha sel ini; NULL bila penyebut 0/absen.", "100·loss/hutan_2009", None),
     ("backtrack_klasifikasi", "aturan", "Metode tahun mulai — lihat backtrack_tahunan.aturan.", None, None),
     ("backtrack_klasifikasi", "kohort", "Kohort tahun-terbit-SK (Pra-2009/P1/P2/P3/TANPA_PERIODE) — eks kolom `periode`, rename Fase G.", None, None),
     ("backtrack_klasifikasi", "kelas", "Kelas izin (IZIN_PERTAMA/PERPANJANGAN/TAK_DINILAI).", None, "klasifikasi_izin.kelas"),
@@ -391,6 +393,56 @@ COLUMN_META = [
     ("backtrack_signifikansi", "p_value", "p mentah dua-sisi.", None, None),
     ("backtrack_signifikansi", "p_adjusted", "p terkoreksi Holm (NULL utk baris Kruskal).", None, None),
     ("backtrack_signifikansi", "signifikan_005", "1 bila p (terkoreksi bila ada) < 0,05.", None, None),
+
+    # ── Irisan halaman Statistik (Fase C 16 Agu): geografi · komoditas rinci ·
+    #    aktor · keparahan · zona bebas — semuanya per metode backtrack,
+    #    jendela [mulai aktif versi aturan, 2025], penyebut hutan_2009_ha.
+    ("backtrack_wilayah", "aturan", "Metode tahun mulai (CITRA/INDIKASI/POLOS) — lihat backtrack_tahunan.aturan.", None, None),
+    ("backtrack_wilayah", "tingkat", "Tingkat agregasi baris: 'total' (satu baris rekonsiliasi, wilayah='SEMUA') / 'provinsi' / 'kabupaten'.", None, None),
+    ("backtrack_wilayah", "wilayah", "Nama wilayah pada tingkat itu ('SEMUA' utk tingkat total). Provinsi = bagian PERTAMA nama_prov (konsesi lintas-provinsi dihitung utuh di provinsi pertama); kabupaten = pecahan kab_normalized.", None, "wiup_geoportal.nama_prov / kab_normalized"),
+    ("backtrack_wilayah", "n_konsesi", "Jumlah konsesi yang tahun mulainya (versi `aturan`) <= 2025 di wilayah ini. AWAS tingkat kabupaten: konsesi lintas-kabupaten dihitung SATU KALI DI TIAP kabupatennya, jadi Σ-nya > jumlah konsesi (hektarnya tidak — lihat kolom loss).", "count", "wiup_geoportal"),
+    ("backtrack_wilayah", "luas_sk_ha", "Σ luas SK konsesi wilayah ini; tingkat kabupaten DIBAGI RATA antar kabupaten konsesi lintas-kabupaten.", "Σ luas_sk (kabupaten: /jumlah kabupaten)", "wiup_geoportal.luas_sk"),
+    ("backtrack_wilayah", "hutan_2009_ha", "Σ hutan acuan 2009 konsesi wilayah ini (penyebut intensitas kerangka era Minerba); dibagi rata sama seperti luas. NULL bila wiup_loss.hutan_2009_ha belum ada.", "Σ hutan_2009_ha", "wiup_loss.hutan_2009_ha"),
+    ("backtrack_wilayah", "loss_mulai_aktif_sampai_2025_ha", "Σ loss Hansen jendela [mulai aktif versi `aturan`, 2025] konsesi wilayah ini; kabupaten dibagi rata (Σ seluruh kabupaten = Σ seluruh provinsi = baris tingkat total, diikat invarian).", "Σ loss [mulai,2025]", "wiup_loss_yearly"),
+    ("backtrack_wilayah", "loss_mulai_aktif_sampai_2021_ha", "Σ loss Hansen (KOTOR) jendela [mulai aktif versi `aturan`, 2021] — batas peta Descals. Dipakai dekomposisi slide sawit: bagian berujung sawit = kolom ini − varian tanpa_sawit; bagian belum terperiksa = loss_mulai_aktif_sampai_2025_ha − kolom ini.", "Σ loss [mulai,2021]", "wiup_loss_yearly"),
+    ("backtrack_wilayah", "loss_sawit_mulai_aktif_sampai_2021_ha", "Bagian kehilangan yang BERTEPATAN jadi kebun sawit (varian tol2th peta Descals) pada [mulai aktif, 2021]. Bertepatan ≠ disebabkan. NULL bila lapisan sawit absen.", "Σ sawit_tol2th [mulai,2021]", "atribusi_sawit_yearly"),
+    ("backtrack_wilayah", "loss_mulai_aktif_sampai_2021_tanpa_sawit_ha", "Varian tanpa-sawit: Σ max(0, loss−sawit) pada [mulai aktif, 2021] (batas peta Descals). NULL bila lapisan sawit absen.", "Σ max(0, loss−sawit) [mulai,2021]", "wiup_loss_yearly × atribusi_sawit_yearly"),
+    ("backtrack_wilayah", "persen_sawit_mulai_aktif_sampai_2021", "100 · loss_sawit / loss_mulai_aktif_sampai_2021_ha — pangsa yang bertepatan sawit DI DALAM jendela terperiksa. Penyebutnya sengaja BUKAN loss s.d. 2025: 2022-2025 di luar jangkauan peta Descals.", "100·sawit/loss [mulai,2021]", None),
+    ("backtrack_wilayah", "loss_2022_2025_belum_terperiksa_ha", "Kehilangan 2022-2025 yang TAK BISA diperiksa sawit (peta Descals berhenti 2021) = loss_mulai_aktif_sampai_2025_ha − loss_mulai_aktif_sampai_2021_ha. Jangan pernah masuk penyebut persen sawit.", "loss[mulai,2025] − loss[mulai,2021]", None),
+    ("backtrack_wilayah", "pct_hutan2009_mulai_aktif_sampai_2025", "Intensitas: 100 · loss_mulai_aktif_sampai_2025_ha / hutan_2009_ha. NULL bila penyebut 0/absen. Bisa > 100 (loss diukur di seluruh poligon, bukan hanya bagian berhutan 2009).", "100·loss/hutan_2009", None),
+    ("backtrack_komoditas_rinci", "aturan", "Metode tahun mulai — lihat backtrack_tahunan.aturan.", None, None),
+    ("backtrack_komoditas_rinci", "komoditas", "Nama komoditas APA ADANYA dari Geoportal (BATUBARA, BAUKSIT, ZIRKON, …) — beda dari backtrack_komoditas yang cuma 2 grup (BATUBARA vs MINERAL LOGAM).", None, "wiup_geoportal.komoditas"),
+    ("backtrack_komoditas_rinci", "n_konsesi", "Konsesi komoditas ini yang tahun mulainya (versi `aturan`) <= 2025.", "count", None),
+    ("backtrack_komoditas_rinci", "luas_sk_ha", "Σ luas SK konsesi komoditas ini.", None, "wiup_geoportal.luas_sk"),
+    ("backtrack_komoditas_rinci", "hutan_2009_ha", "Σ hutan acuan 2009 komoditas ini (penyebut intensitas). NULL bila kolom sumber absen.", None, "wiup_loss.hutan_2009_ha"),
+    ("backtrack_komoditas_rinci", "loss_mulai_aktif_sampai_2025_ha", "Σ loss Hansen jendela [mulai aktif versi `aturan`, 2025].", "Σ loss [mulai,2025]", "wiup_loss_yearly"),
+    ("backtrack_komoditas_rinci", "loss_mulai_aktif_sampai_2021_tanpa_sawit_ha", "Varian tanpa-sawit [mulai aktif, 2021]; NULL bila lapisan sawit absen.", None, "wiup_loss_yearly × atribusi_sawit_yearly"),
+    ("backtrack_komoditas_rinci", "pct_hutan2009_mulai_aktif_sampai_2025", "Intensitas komoditas: 100 · loss / hutan_2009_ha.", "100·loss/hutan_2009", None),
+    ("backtrack_konsesi_top", "aturan", "Metode tahun mulai — lihat backtrack_tahunan.aturan.", None, None),
+    ("backtrack_konsesi_top", "peringkat", "Peringkat 1-10 menurut loss_mulai_aktif_sampai_2025_ha (menurun) DI DALAM aturan ini — peringkat disimpan supaya klien tak mengurut ulang.", None, None),
+    ("backtrack_konsesi_top", "kode_wiup", "Kode WIUP konsesi (kunci ke wiup_geoportal).", None, "wiup_geoportal.kode_wiup"),
+    ("backtrack_konsesi_top", "nama_usaha", "Nama badan usaha pemegang konsesi (didenormalisasi utk label chart).", None, "wiup_geoportal.nama_usaha"),
+    ("backtrack_konsesi_top", "komoditas", "Komoditas konsesi.", None, "wiup_geoportal.komoditas"),
+    ("backtrack_konsesi_top", "nama_prov", "Provinsi konsesi (bagian pertama bila lintas-provinsi).", None, "wiup_geoportal.nama_prov"),
+    ("backtrack_konsesi_top", "mulai_aktif", "Tahun mulai aktif konsesi ini menurut `aturan`.", None, "laju_izin_konsesi.mulai / atribusi_izin_aktif.mulai"),
+    ("backtrack_konsesi_top", "luas_sk_ha", "Luas SK konsesi (ha).", None, "wiup_geoportal.luas_sk"),
+    ("backtrack_konsesi_top", "hutan_2009_ha", "Hutan acuan 2009 di poligon konsesi (penyebut intensitas).", None, "wiup_loss.hutan_2009_ha"),
+    ("backtrack_konsesi_top", "loss_mulai_aktif_sampai_2025_ha", "Loss Hansen jendela [mulai aktif versi `aturan`, 2025] konsesi ini.", "Σ loss [mulai,2025]", "wiup_loss_yearly"),
+    ("backtrack_konsesi_top", "pct_hutan2009_mulai_aktif_sampai_2025", "100 · loss / hutan_2009_ha konsesi ini.", "100·loss/hutan_2009", None),
+    ("backtrack_keparahan", "aturan", "Metode tahun mulai — lihat backtrack_tahunan.aturan.", None, None),
+    ("backtrack_keparahan", "ember", "Label ember keparahan ('0–10%' … '75%+') atas % hutan-2009 yang hilang sejak konsesi aktif.", None, None),
+    ("backtrack_keparahan", "urutan", "Urutan tampil ember (1..5) — supaya klien tak mengurut label teks.", None, None),
+    ("backtrack_keparahan", "batas_bawah_pct", "Batas bawah ember (inklusif), dalam % hutan 2009.", None, None),
+    ("backtrack_keparahan", "batas_atas_pct", "Batas atas ember (eksklusif); NULL = terbuka ke atas (loss bisa > 100% hutan 2009).", None, None),
+    ("backtrack_keparahan", "n_konsesi", "Jumlah konsesi (mulai versi `aturan` <= 2025, hutan_2009_ha > 0) yang jatuh di ember ini.", "count", None),
+    ("backtrack_keparahan", "n_tanpa_penyebut", "Konsesi kohort yang TAK bisa diember karena hutan_2009_ha = 0/absen — sama di tiap baris satu aturan (rekonsiliasi: Σ n_konsesi + n_tanpa_penyebut = kohort aturan itu).", "count", None),
+    ("backtrack_zona_bebas", "aturan", "Metode tahun mulai — lihat backtrack_tahunan.aturan.", None, None),
+    ("backtrack_zona_bebas", "year", "Tahun potret, 2009-2025 (jendela era Minerba).", None, None),
+    ("backtrack_zona_bebas", "n_kab_total", "Jumlah kab/kota master Kalimantan (56, Kemendagri 2024) — konstan.", None, "konstanta MASTER_KABKOTA (scripts/build_laju_izin.py)"),
+    ("backtrack_zona_bebas", "n_kab_ada_konsesi", "Kab/kota yang sudah dimasuki minimal satu konsesi AKTIF versi `aturan` pada tahun itu (jam metode, bukan tahun terbit SK).", "count(master ∈ ∪ kab konsesi ber-mulai <= year)", "wiup_geoportal.kab_normalized"),
+    ("backtrack_zona_bebas", "n_kab_bersih", "Kab/kota tanpa satu pun konsesi aktif pada tahun itu = n_kab_total − n_kab_ada_konsesi. Monoton tak naik terhadap tahun (himpunan aktif hanya bertambah) — diikat invarian.", "n_kab_total − n_kab_ada_konsesi", None),
+    ("backtrack_zona_bebas", "kab_bersih", "Daftar nama KABUPATEN yang masih bebas konsesi pada tahun itu, dipisah koma.", None, None),
+    ("backtrack_zona_bebas", "kota_bersih", "Daftar nama KOTA yang masih bebas konsesi pada tahun itu, dipisah koma (dipisah dari kabupaten karena kota memang jarang jadi wilayah izin).", None, None),
 
     # ── laju_izin_eventstudy: loss per tahun-relatif-izin ───────────────────────
     ("laju_izin_eventstudy", "kelas", "Kelas izin (IZIN_PERTAMA/PERPANJANGAN/TAK_DINILAI) + rollup 'SEMUA'.", None, "atribusi_izin_aktif.kelas"),
@@ -2122,6 +2174,50 @@ def main() -> int:
          "tahun_akhir] (tanpa-sawit s.d. min(tahun_akhir, 2021)) — konsesi yang baru mulai di "
          "tengah jendela dihitung sejak mulainya; ditambang SEMUA = sejak-mulai "
          "[mulai versi aturan, 2025] (tanpa-sawit [mulai, 2021]).",
+         "scripts/build_laju_izin.py"),
+        ("backtrack_wilayah",
+         "Irisan GEOGRAFI per metode backtrack: kehilangan & intensitas per provinsi dan "
+         "per kabupaten (plus satu baris tingkat 'total' utk rekonsiliasi) pada jendela "
+         "[mulai aktif versi aturan, 2025] — sumber blok geografi halaman Statistik.",
+         "wiup_geoportal (nama_prov, kab_normalized, luas_sk) × wiup_loss (hutan_2009_ha) × "
+         "wiup_loss_yearly × atribusi_sawit_yearly",
+         "Anggota = konsesi ber-mulai versi aturan <= 2025. Provinsi: konsesi lintas-provinsi "
+         "dihitung UTUH di provinsi pertama. Kabupaten: kab_normalized dipecah koma, luas/hutan/"
+         "loss DIBAGI RATA antar kabupaten (n_konsesi tidak dibagi — tercatat di tiap kabupaten). "
+         "Σ hektar tingkat provinsi = Σ tingkat kabupaten = baris tingkat total (invarian "
+         "backtrack-wilayah-rekonsil). pct = 100·loss/hutan_2009_ha.",
+         "scripts/build_laju_izin.py"),
+        ("backtrack_komoditas_rinci",
+         "Kehilangan & intensitas per NAMA komoditas (bukan 2 grup) per metode backtrack — "
+         "sumber dua slide komoditas halaman Statistik (volume & intensitas).",
+         "wiup_geoportal.komoditas × wiup_loss.hutan_2009_ha × wiup_loss_yearly × atribusi_sawit_yearly",
+         "Group by komoditas apa adanya atas konsesi ber-mulai <= 2025; jendela [mulai, 2025] "
+         "(tanpa-sawit [mulai, 2021]); pct = 100·loss/hutan_2009_ha.",
+         "scripts/build_laju_izin.py"),
+        ("backtrack_konsesi_top",
+         "Sepuluh konsesi penyumbang kehilangan terbesar per metode backtrack (peringkat "
+         "disimpan) — sumber slide aktor halaman Statistik.",
+         "laju_izin_konsesi × atribusi_izin_aktif × wiup_geoportal × wiup_loss × wiup_loss_yearly",
+         "Urut menurun loss jendela [mulai aktif versi aturan, 2025], ambil 10 teratas; "
+         "nama_usaha/komoditas/nama_prov didenormalisasi utk label chart.",
+         "scripts/build_laju_izin.py"),
+        ("backtrack_keparahan",
+         "Histogram keparahan per konsesi per metode backtrack: berapa konsesi kehilangan "
+         "0-10% / 10-25% / 25-50% / 50-75% / >75% hutan-2009-nya sejak aktif.",
+         "wiup_loss.hutan_2009_ha × wiup_loss_yearly × laju_izin_konsesi × atribusi_izin_aktif",
+         "pct per konsesi = 100·loss[mulai,2025]/hutan_2009_ha; ember teratas TERBUKA ke atas "
+         "(loss bisa > 100% hutan acuan). Konsesi berpenyebut 0 masuk n_tanpa_penyebut, bukan "
+         "dibuang diam-diam.",
+         "scripts/build_laju_izin.py"),
+        ("backtrack_zona_bebas",
+         "Kab/kota Kalimantan yang belum dimasuki konsesi tambang, per tahun 2009-2025 per "
+         "metode backtrack — menggantikan endpoint /api/clean-kabupaten (dihapus 16 Agu) yang "
+         "berjam tahun terbit SK.",
+         "konstanta MASTER_KABKOTA (56 kab/kota, Kemendagri 2024) × wiup_geoportal.kab_normalized",
+         "kab_normalized dinormalisasi (buang 'KAB.'/'KOTA ', koreksi ejaan, pecah koma & "
+         "'HULU SUNGAI (TENGAH,SELATAN)') lalu dicocokkan ke master; sebuah kab/kota 'dimasuki' "
+         "pada tahun y bila ada konsesi di wilayahnya dgn mulai versi aturan <= y. n_kab_bersih "
+         "monoton tak naik (invarian backtrack-zona-monoton).",
          "scripts/build_laju_izin.py"),
         ("backtrack_signifikansi",
          "Uji beda antar-periode (Kruskal-Wallis + Mann-Whitney/Holm) per metode backtrack, "

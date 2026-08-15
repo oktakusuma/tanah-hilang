@@ -34,7 +34,7 @@ Tiga metrik (keputusan user 12 Agu 2026):
                         terpisah dari jam bukti di tabel laju.
 
 Tabel: laju_izin_konsesi (825, kohort = mulai NOT NULL), laju_izin_eventstudy
-(kelas × rel_year, kohort iup_year 2009-2025), 10 tabel backtrack_* + dua VIEW
+(kelas × rel_year, kohort iup_year 2009-2025), 15 tabel backtrack_* + dua VIEW
 kompatibilitas (Fase G 15 Agu): laju_izin_ringkas = backtrack_laju_ringkas
 baris CITRA, konsesi_aktif_tahunan = backtrack_tahunan baris CITRA. Kolom jendela era Minerba (loss_2009_2025_ha dst)
 kini hidup di wiup_loss (dihitung ingest build_combined_db) — tabel
@@ -55,6 +55,112 @@ BUKTI_MIN = 2001              # bukti pembukaan dicari sejak awal Hansen (lihat
 AMBANG_BUKTI_HA = 1.0         # bukti pembukaan = loss non-sawit >= 1 ha dlm setahun
                               # (~11 piksel Hansen 30 m — di atas derau piksel tunggal)
 REL_MIN, REL_MAX = -10, 16    # jangkauan rel_year event-study
+
+# ── Master 56 kab/kota Kalimantan (Kemendagri 2024) ──────────────────────────
+# Dipindah dari handler Go /api/clean-kabupaten (dihapus 16 Agu, Fase C):
+# "bebas konsesi" adalah STATISTIK, jadi tempatnya di pipeline — bukan dihitung
+# ulang tiap request. Isi & ejaan dipertahankan persis supaya angka lama
+# (jam tahun SK) tetap bisa direproduksi; yang berubah cuma JAM-nya: kini
+# tahun mulai aktif versi metode backtrack, bukan tahun terbit SK.
+# (nama, provinsi, kota?)
+MASTER_KABKOTA = [
+    ("BENGKAYANG", "KALIMANTAN BARAT", False),
+    ("KAPUAS HULU", "KALIMANTAN BARAT", False),
+    ("KAYONG UTARA", "KALIMANTAN BARAT", False),
+    ("KETAPANG", "KALIMANTAN BARAT", False),
+    ("KUBU RAYA", "KALIMANTAN BARAT", False),
+    ("LANDAK", "KALIMANTAN BARAT", False),
+    ("MELAWI", "KALIMANTAN BARAT", False),
+    ("MEMPAWAH", "KALIMANTAN BARAT", False),
+    ("SAMBAS", "KALIMANTAN BARAT", False),
+    ("SANGGAU", "KALIMANTAN BARAT", False),
+    ("SEKADAU", "KALIMANTAN BARAT", False),
+    ("SINTANG", "KALIMANTAN BARAT", False),
+    ("PONTIANAK", "KALIMANTAN BARAT", True),
+    ("SINGKAWANG", "KALIMANTAN BARAT", True),
+    ("BARITO SELATAN", "KALIMANTAN TENGAH", False),
+    ("BARITO TIMUR", "KALIMANTAN TENGAH", False),
+    ("BARITO UTARA", "KALIMANTAN TENGAH", False),
+    ("GUNUNG MAS", "KALIMANTAN TENGAH", False),
+    ("KAPUAS", "KALIMANTAN TENGAH", False),
+    ("KATINGAN", "KALIMANTAN TENGAH", False),
+    ("KOTAWARINGIN BARAT", "KALIMANTAN TENGAH", False),
+    ("KOTAWARINGIN TIMUR", "KALIMANTAN TENGAH", False),
+    ("LAMANDAU", "KALIMANTAN TENGAH", False),
+    ("MURUNG RAYA", "KALIMANTAN TENGAH", False),
+    ("PULANG PISAU", "KALIMANTAN TENGAH", False),
+    ("SERUYAN", "KALIMANTAN TENGAH", False),
+    ("SUKAMARA", "KALIMANTAN TENGAH", False),
+    ("PALANGKA RAYA", "KALIMANTAN TENGAH", True),
+    ("BALANGAN", "KALIMANTAN SELATAN", False),
+    ("BANJAR", "KALIMANTAN SELATAN", False),
+    ("BARITO KUALA", "KALIMANTAN SELATAN", False),
+    ("HULU SUNGAI SELATAN", "KALIMANTAN SELATAN", False),
+    ("HULU SUNGAI TENGAH", "KALIMANTAN SELATAN", False),
+    ("HULU SUNGAI UTARA", "KALIMANTAN SELATAN", False),
+    ("KOTABARU", "KALIMANTAN SELATAN", False),
+    ("TABALONG", "KALIMANTAN SELATAN", False),
+    ("TANAH BUMBU", "KALIMANTAN SELATAN", False),
+    ("TANAH LAUT", "KALIMANTAN SELATAN", False),
+    ("TAPIN", "KALIMANTAN SELATAN", False),
+    ("BANJARBARU", "KALIMANTAN SELATAN", True),
+    ("BANJARMASIN", "KALIMANTAN SELATAN", True),
+    ("BERAU", "KALIMANTAN TIMUR", False),
+    ("KUTAI BARAT", "KALIMANTAN TIMUR", False),
+    ("KUTAI KARTANEGARA", "KALIMANTAN TIMUR", False),
+    ("KUTAI TIMUR", "KALIMANTAN TIMUR", False),
+    ("MAHAKAM ULU", "KALIMANTAN TIMUR", False),
+    ("PASER", "KALIMANTAN TIMUR", False),
+    ("PENAJAM PASER UTARA", "KALIMANTAN TIMUR", False),
+    ("BALIKPAPAN", "KALIMANTAN TIMUR", True),
+    ("BONTANG", "KALIMANTAN TIMUR", True),
+    ("SAMARINDA", "KALIMANTAN TIMUR", True),
+    ("BULUNGAN", "KALIMANTAN UTARA", False),
+    ("MALINAU", "KALIMANTAN UTARA", False),
+    ("NUNUKAN", "KALIMANTAN UTARA", False),
+    ("TANA TIDUNG", "KALIMANTAN UTARA", False),
+    ("TARAKAN", "KALIMANTAN UTARA", True),
+]
+
+# Ember keparahan per konsesi (% hutan-2009 yang hilang sejak konsesi aktif).
+# Ember teratas SENGAJA terbuka ke atas: loss diukur di seluruh poligon, jadi
+# bisa melebihi 100% hutan acuan — batas keras 100 dulu membuang konsesi
+# terparah dari histogram (temuan lama, dipertahankan di kerangka baru).
+EMBER_KEPARAHAN = [
+    ("0–10%", 0.0, 10.0),
+    ("10–25%", 10.0, 25.0),
+    ("25–50%", 25.0, 50.0),
+    ("50–75%", 50.0, 75.0),
+    ("75%+", 75.0, None),
+]
+
+
+def normalisasi_kabkota(raw):
+    """Set nama kab/kota master dari satu string `kab_normalized` Geoportal.
+
+    Satu konsesi bisa memuat BEBERAPA kabupaten ("A, B") — dipecah, dirapikan,
+    dan dicocokkan ke ejaan master. Aturan pembersihan dipindah apa adanya dari
+    handler Go /api/clean-kabupaten (16 Agu) supaya hasilnya identik.
+    """
+    if not raw:
+        return set()
+    s = raw.upper()
+    s = s.replace("KAB.", "").replace("KOTA ", "").replace("&", ",").replace(" DAN ", ",")
+    s = (s.replace("GUNUNGMAS", "GUNUNG MAS")
+          .replace("PALANGKARAYA", "PALANGKA RAYA")
+          .replace("TANAHBUMBU", "TANAH BUMBU")
+          .replace("TANAHLAUT", "TANAH LAUT")
+          .replace("TANATIDUNG", "TANA TIDUNG"))
+    out = set()
+    if "HULU SUNGAI (TENGAH,SELATAN)" in s:
+        out.add("HULU SUNGAI TENGAH")
+        out.add("HULU SUNGAI SELATAN")
+        s = s.replace("HULU SUNGAI (TENGAH,SELATAN)", "")
+    for bagian in s.split(","):
+        bagian = " ".join(bagian.split())
+        if bagian:
+            out.add(bagian)
+    return out
 
 
 # to_periode diimpor dari modul kanonik — dulu replika hardcode di sini
@@ -211,6 +317,28 @@ def build_backtrack_tables(con, rows, loss_th, sawit_th, f2000, ada_sawit):
     kelas_of = {kode: kelas for kode, kelas, _b, _iy in rows}
     kode_semua = [r[0] for r in rows]
 
+    # Kolom pendukung dimensi WILAYAH & penyebut hutan-2009 (Fase C 16 Agu).
+    # Dibaca DEFENSIF lewat PRAGMA: fixture uji lama (dan DB generasi awal)
+    # belum punya kolom ini — tabel yang bergantung padanya cukup dilewati,
+    # jangan menjatuhkan seluruh build.
+    kol_geo = {r[1] for r in con.execute("PRAGMA table_info(wiup_geoportal)")}
+    kol_loss = {r[1] for r in con.execute("PRAGMA table_info(wiup_loss)")}
+    ada_wilayah = {"nama_prov", "kab_normalized", "nama_usaha"} <= kol_geo
+    ada_h09 = "hutan_2009_ha" in kol_loss
+    h09 = (dict(con.execute("SELECT kode_wiup, COALESCE(hutan_2009_ha,0) FROM wiup_loss"))
+           if ada_h09 else {})
+    if ada_wilayah:
+        wil = {kode: (prov, kab, nama) for kode, prov, kab, nama in con.execute(
+            "SELECT kode_wiup, COALESCE(nama_prov,''), "
+            "COALESCE(kab_normalized, nama_kab, ''), COALESCE(nama_usaha,'') "
+            "FROM wiup_geoportal")}
+    else:
+        wil = {}
+        print("PERINGATAN: kolom wilayah wiup_geoportal absen — "
+              "backtrack_wilayah/_zona_bebas/_konsesi_top dilewati.")
+    if not ada_h09:
+        print("PERINGATAN: wiup_loss.hutan_2009_ha absen — penyebut hutan-2009 NULL.")
+
     def loss_jendela(kode, mulai, y_akhir):
         return sum(v for y, v in loss_th.get(kode, {}).items() if mulai <= y <= y_akhir)
 
@@ -359,9 +487,13 @@ def build_backtrack_tables(con, rows, loss_th, sawit_th, f2000, ada_sawit):
         polygon_ha REAL, pct_poligon_mulai_aktif_sampai_2025 REAL, r_luas_loss REAL,
         PRIMARY KEY (aturan, kohort))""")
     con.execute("DROP TABLE IF EXISTS backtrack_komoditas")
+    # hutan_2009_ha + persen (Fase C 16 Agu): penyebut intensitas komoditas WAJIB
+    # hutan acuan 2009 (kerangka era Minerba), bukan hutan 2000 seperti dek
+    # Statistik lama. NULL bila wiup_loss belum punya kolom hutan_2009_ha.
     con.execute("""CREATE TABLE backtrack_komoditas (
         aturan TEXT, kohort TEXT, grup_komoditas TEXT, n INTEGER,
         loss_mulai_aktif_sampai_2025_ha REAL, loss_mulai_aktif_sampai_2021_tanpa_sawit_ha REAL,
+        hutan_2009_ha REAL, pct_hutan2009_mulai_aktif_sampai_2025 REAL,
         PRIMARY KEY (aturan, kohort, grup_komoditas))""")
     con.execute("DROP TABLE IF EXISTS backtrack_klasifikasi")
     con.execute("""CREATE TABLE backtrack_klasifikasi (
@@ -417,9 +549,12 @@ def build_backtrack_tables(con, rows, loss_th, sawit_th, f2000, ada_sawit):
             for g, ks in sorted(per_g.items()):
                 gl25 = sum(loss_jendela(k, m_of[k], JENDELA_MAX) for k in ks)
                 gl21 = sum(tanpa_sawit_jendela(k, m_of[k]) for k in ks) if ada_sawit else None
-                con.execute("INSERT INTO backtrack_komoditas VALUES (?,?,?,?,?,?)",
+                gh09 = sum(h09.get(k, 0.0) for k in ks) if ada_h09 else None
+                con.execute("INSERT INTO backtrack_komoditas VALUES (?,?,?,?,?,?,?,?)",
                             (aturan, pp, g, len(ks), round(gl25, 2),
-                             None if gl21 is None else round(gl21, 2)))
+                             None if gl21 is None else round(gl21, 2),
+                             None if gh09 is None else round(gh09, 2),
+                             round(100.0 * gl25 / gh09, 2) if gh09 else None))
             per_k: dict[str, list] = {}
             for k in punya:
                 per_k.setdefault(kelas_of.get(k) or "TAK_DINILAI", []).append(k)
@@ -492,6 +627,191 @@ def build_backtrack_tables(con, rows, loss_th, sawit_th, f2000, ada_sawit):
                             (aturan, pp, len(ks), round(l21, 2), round(sw21, 2),
                              round(ts, 2),
                              round(100.0 * sw21 / l21, 2) if l21 else None))
+
+    # ── Dimensi GEOGRAFI · KOMODITAS RINCI · AKTOR · KEPARAHAN ───────────────
+    # Fase C (16 Agu): halaman Statistik dibangun ulang ke kerangka 2009-2025 ×
+    # 3 metode. Empat irisan di bawah DULU dihitung di klien dari /api/polygons
+    # (kerangka lama 2001-2025, penyebut hutan 2000, tak bisa ikut metode) —
+    # melanggar pola analysis-tables-in-DB. Kini semua jadi tabel: satu baris
+    # per (aturan × irisan), jendela [mulai aktif versi `aturan`, 2025],
+    # penyebut intensitas = hutan_2009_ha.
+    con.execute("DROP TABLE IF EXISTS backtrack_wilayah")
+    con.execute("""CREATE TABLE backtrack_wilayah (
+        aturan TEXT, tingkat TEXT, wilayah TEXT,
+        n_konsesi INTEGER, luas_sk_ha REAL, hutan_2009_ha REAL,
+        loss_mulai_aktif_sampai_2025_ha REAL,
+        loss_mulai_aktif_sampai_2021_ha REAL,
+        loss_sawit_mulai_aktif_sampai_2021_ha REAL,
+        loss_mulai_aktif_sampai_2021_tanpa_sawit_ha REAL,
+        persen_sawit_mulai_aktif_sampai_2021 REAL,
+        loss_2022_2025_belum_terperiksa_ha REAL,
+        pct_hutan2009_mulai_aktif_sampai_2025 REAL,
+        PRIMARY KEY (aturan, tingkat, wilayah))""")
+    con.execute("DROP TABLE IF EXISTS backtrack_komoditas_rinci")
+    con.execute("""CREATE TABLE backtrack_komoditas_rinci (
+        aturan TEXT, komoditas TEXT,
+        n_konsesi INTEGER, luas_sk_ha REAL, hutan_2009_ha REAL,
+        loss_mulai_aktif_sampai_2025_ha REAL,
+        loss_mulai_aktif_sampai_2021_tanpa_sawit_ha REAL,
+        pct_hutan2009_mulai_aktif_sampai_2025 REAL,
+        PRIMARY KEY (aturan, komoditas))""")
+    con.execute("DROP TABLE IF EXISTS backtrack_konsesi_top")
+    con.execute("""CREATE TABLE backtrack_konsesi_top (
+        aturan TEXT, peringkat INTEGER, kode_wiup TEXT, nama_usaha TEXT,
+        komoditas TEXT, nama_prov TEXT, mulai_aktif INTEGER,
+        luas_sk_ha REAL, hutan_2009_ha REAL,
+        loss_mulai_aktif_sampai_2025_ha REAL,
+        pct_hutan2009_mulai_aktif_sampai_2025 REAL,
+        PRIMARY KEY (aturan, peringkat))""")
+    con.execute("DROP TABLE IF EXISTS backtrack_keparahan")
+    con.execute("""CREATE TABLE backtrack_keparahan (
+        aturan TEXT, ember TEXT, urutan INTEGER,
+        batas_bawah_pct REAL, batas_atas_pct REAL,
+        n_konsesi INTEGER, n_tanpa_penyebut INTEGER,
+        PRIMARY KEY (aturan, ember))""")
+    con.execute("DROP TABLE IF EXISTS backtrack_zona_bebas")
+    con.execute("""CREATE TABLE backtrack_zona_bebas (
+        aturan TEXT, year INTEGER,
+        n_kab_total INTEGER, n_kab_ada_konsesi INTEGER, n_kab_bersih INTEGER,
+        kab_bersih TEXT, kota_bersih TEXT,
+        PRIMARY KEY (aturan, year))""")
+
+    TOP_N = 10
+    if ada_wilayah:
+        # Set kab/kota master per konsesi (satu konsesi bisa lintas kabupaten).
+        kab_set = {k: normalisasi_kabkota(wil.get(k, ("", "", ""))[1])
+                   for k in kode_semua}
+        for aturan, m_of in mulai_of.items():
+            punya = [k for k in kode_semua
+                     if m_of.get(k) is not None and m_of[k] <= JENDELA_MAX]
+            # Nilai per konsesi (jendela IKUT aturan) — dipakai ulang 4 tabel.
+            # (luas_sk, hutan_2009, loss s.d. 2025, loss KOTOR s.d. 2021,
+            #  loss tanpa-sawit s.d. 2021). Dua angka 2021 dipakai dekomposisi
+            # slide sawit: sawit = kotor2021 − tanpa_sawit2021; belum terperiksa
+            # = loss2025 − kotor2021 (peta Descals berhenti 2021).
+            nilai = {k: (geo.get(k, (None, 0.0))[1],
+                         h09.get(k, 0.0),
+                         loss_jendela(k, m_of[k], JENDELA_MAX),
+                         loss_jendela(k, m_of[k], BATAS_DESCALS),
+                         sum(v for y, v in sawit_th.get(k, {}).items()
+                             if m_of[k] <= y <= BATAS_DESCALS) if ada_sawit else 0.0,
+                         tanpa_sawit_jendela(k, m_of[k]) if ada_sawit else 0.0)
+                     for k in punya}
+
+            # ── tingkat total / provinsi / kabupaten ─────────────────────────
+            # provinsi: konsesi lintas-provinsi dihitung UTUH di provinsi
+            # pertama (aturan lama dek Statistik, dipertahankan).
+            # kabupaten: konsesi lintas-kabupaten DIPECAH & nilainya dibagi
+            # rata antar kabupaten — makanya Σ n_konsesi tingkat kabupaten bisa
+            # > jumlah konsesi (satu konsesi tercatat di beberapa kabupaten),
+            # sementara Σ hektarnya tetap = total (bagian-bagiannya berjumlah 1).
+            ember: dict[tuple[str, str], list] = {}
+
+            def tambah(tingkat, nama, luas, hutan, l25, l21, sw, lts, n=1):
+                e = ember.setdefault((tingkat, nama), [0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
+                e[0] += n
+                e[1] += luas
+                e[2] += hutan
+                e[3] += l25
+                e[4] += l21
+                e[5] += sw
+                e[6] += lts
+
+            for k in punya:
+                luas, hutan, l25, l21, sw, lts = nilai[k]
+                tambah("total", "SEMUA", luas, hutan, l25, l21, sw, lts)
+                prov = (wil.get(k, ("", "", ""))[0] or "").split(",")[0].strip()
+                if prov:
+                    tambah("provinsi", prov, luas, hutan, l25, l21, sw, lts)
+                bagian = [x.strip() for x in
+                          (wil.get(k, ("", "", ""))[1] or "").split(",") if x.strip()]
+                if bagian:
+                    bg = float(len(bagian))
+                    for nama in bagian:
+                        tambah("kabupaten", nama, luas / bg, hutan / bg,
+                               l25 / bg, l21 / bg, sw / bg, lts / bg)
+            for (tingkat, nama), (n, luas, hutan, l25, l21, sw, lts) in sorted(ember.items()):
+                con.execute("INSERT INTO backtrack_wilayah VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                            (aturan, tingkat, nama, n, round(luas, 2),
+                             round(hutan, 2) if ada_h09 else None,
+                             round(l25, 2), round(l21, 2),
+                             round(sw, 2) if ada_sawit else None,
+                             round(lts, 2) if ada_sawit else None,
+                             round(100.0 * sw / l21, 2) if (ada_sawit and l21 > 0) else None,
+                             round(l25 - l21, 2),
+                             round(100.0 * l25 / hutan, 2)
+                             if (ada_h09 and hutan > 0) else None))
+
+            # ── komoditas rinci (nama komoditas apa adanya, bukan 2 grup) ────
+            per_komo: dict[str, list] = {}
+            for k in punya:
+                luas, hutan, l25, _l21, _sw, lts = nilai[k]
+                e = per_komo.setdefault(geo.get(k, (None, 0.0, None, None))[3] or "(tanpa komoditas)",
+                                        [0, 0.0, 0.0, 0.0, 0.0])
+                e[0] += 1
+                e[1] += luas
+                e[2] += hutan
+                e[3] += l25
+                e[4] += lts
+            for nama, (n, luas, hutan, l25, lts) in sorted(per_komo.items()):
+                con.execute("INSERT INTO backtrack_komoditas_rinci VALUES (?,?,?,?,?,?,?,?)",
+                            (aturan, nama, n, round(luas, 2),
+                             round(hutan, 2) if ada_h09 else None,
+                             round(l25, 2),
+                             round(lts, 2) if ada_sawit else None,
+                             round(100.0 * l25 / hutan, 2)
+                             if (ada_h09 and hutan > 0) else None))
+
+            # ── aktor: 10 konsesi penyumbang terbesar (peringkat disimpan) ───
+            urut = sorted(punya, key=lambda k: nilai[k][2], reverse=True)[:TOP_N]
+            for i, k in enumerate(urut, start=1):
+                luas, hutan, l25, _l21, _sw, _lts = nilai[k]
+                iy, _l, _p, komo = geo.get(k, (None, 0.0, None, None))
+                con.execute(
+                    "INSERT INTO backtrack_konsesi_top VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+                    (aturan, i, k, wil.get(k, ("", "", ""))[2], komo,
+                     (wil.get(k, ("", "", ""))[0] or "").split(",")[0].strip(),
+                     m_of[k], round(luas, 2),
+                     round(hutan, 2) if ada_h09 else None, round(l25, 2),
+                     round(100.0 * l25 / hutan, 2)
+                     if (ada_h09 and hutan > 0) else None))
+
+            # ── keparahan per konsesi (% hutan-2009 yang hilang sejak aktif) ──
+            cacah = {nama: 0 for nama, _a, _b in EMBER_KEPARAHAN}
+            tanpa = 0
+            for k in punya:
+                _luas, hutan, l25, _l21, _sw, _lts = nilai[k]
+                if not ada_h09 or hutan <= 0:
+                    tanpa += 1
+                    continue
+                p = max(0.0, 100.0 * l25 / hutan)
+                for nama, lo, hi in EMBER_KEPARAHAN:
+                    if p >= lo and (hi is None or p < hi):
+                        cacah[nama] += 1
+                        break
+            for i, (nama, lo, hi) in enumerate(EMBER_KEPARAHAN, start=1):
+                con.execute("INSERT INTO backtrack_keparahan VALUES (?,?,?,?,?,?,?)",
+                            (aturan, nama, i, lo, hi, cacah[nama], tanpa))
+
+            # ── zona bebas konsesi: master 56 kab/kota − yang sudah dimasuki ──
+            # JAM BARU (Fase C): kab/kota terhitung "dimasuki" pada tahun y bila
+            # ada konsesi di wilayahnya yang sudah AKTIF versi metode ini pada y
+            # — bukan lagi "SK-nya sudah terbit". Karena himpunan aktif hanya
+            # bertambah, n_kab_bersih monoton tak naik (diikat invarian).
+            for y in range(JENDELA_MIN, JENDELA_MAX + 1):
+                dimasuki = set()
+                for k in kode_semua:
+                    if m_of.get(k) is not None and m_of[k] <= y:
+                        dimasuki |= kab_set[k]
+                kab_b = [n for n, _p, kota in MASTER_KABKOTA
+                         if not kota and n not in dimasuki]
+                kota_b = [n for n, _p, kota in MASTER_KABKOTA
+                          if kota and n not in dimasuki]
+                n_ada = sum(1 for n, _p, _k in MASTER_KABKOTA if n in dimasuki)
+                con.execute("INSERT INTO backtrack_zona_bebas VALUES (?,?,?,?,?,?,?)",
+                            (aturan, y, len(MASTER_KABKOTA), n_ada,
+                             len(kab_b) + len(kota_b),
+                             ", ".join(kab_b), ", ".join(kota_b)))
 
     # ── backtrack_laju_ringkas: persentil laju per aturan (blok Kecepatan) ───
     # Baris CITRA = SUMBER view laju_izin_ringkas (Fase G 15 Agu — dulu tabel
