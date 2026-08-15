@@ -6,7 +6,7 @@ The frontend imports that JSON for all narrative figures (Metodologi, StoryIntro
 LoginPage, …) so a data refresh = re-run this script → every page updates.
 Pages that already read the live /api are unaffected.
 
-Run after the pipeline (build_combined_db → filter_minerba):
+Jalankan TERAKHIR (setelah build_periode_tables — langkah 17/17 rescrape/process.sh):
   python scripts/gen_dashboard_stats.py
 """
 from __future__ import annotations
@@ -33,20 +33,23 @@ def snapshot(db_path: Path) -> dict:
         return conn.execute(sql).fetchone()[0]
 
     wiup = one("SELECT COUNT(*) FROM wiup_master")
-    loss = one("SELECT COALESCE(SUM(total_loss_ha),0) FROM wiup_master")
+    loss = one("SELECT COALESCE(SUM(loss_2001_2025_ha),0) FROM wiup_master")
+    # Jendela era Minerba (Fase B — fokus permukaan web, keputusan igoen 12 Agu)
+    loss09 = one("SELECT COALESCE(SUM(loss_2009_2025_ha),0) FROM wiup_master")
+    hutan09 = one("SELECT COALESCE(SUM(hutan_2009_ha),0) FROM wiup_master")
     forest = one("SELECT COALESCE(SUM(forest_2000_ha),0) FROM wiup_master")
     matched = one("SELECT COUNT(*) FROM wiup_match WHERE match_strategy IS NOT NULL")
 
     per_komoditas = [
         {"nama": r["komoditas"], "n": r["n"], "loss_ha": round(r["loss"] or 0)}
         for r in conn.execute(
-            "SELECT komoditas, COUNT(*) n, SUM(total_loss_ha) loss "
+            "SELECT komoditas, COUNT(*) n, SUM(loss_2001_2025_ha) loss "
             "FROM wiup_master GROUP BY komoditas ORDER BY n DESC")
     ]
     per_provinsi = [
         {"nama": r["nama_prov"], "n": r["n"], "loss_ha": round(r["loss"] or 0)}
         for r in conn.execute(
-            "SELECT nama_prov, COUNT(*) n, SUM(total_loss_ha) loss "
+            "SELECT nama_prov, COUNT(*) n, SUM(loss_2001_2025_ha) loss "
             "FROM wiup_master GROUP BY nama_prov ORDER BY loss DESC")
     ]
     match_strategy = {
@@ -67,6 +70,11 @@ def snapshot(db_path: Path) -> dict:
         "loss_ha": round(loss),
         "forest_2000_ha": round(forest),
         "loss_pct_forest": round(100.0 * loss / forest, 1) if forest else 0.0,
+        "loss_2009_2025_ha": round(loss09),
+        "hutan_2009_ha": round(hutan09),
+        # Kunci JSON = nama kolom DB pasca-rename 15 Agu (jendela pembilang
+        # masuk nama) — konsumen: HeroStats/LoginPage/StoryIntro via lib/stats.
+        "loss_2009_2025_pct_hutan2009": round(100.0 * loss09 / hutan09, 1) if hutan09 else 0.0,
         "matched": matched,
         "unmatched": wiup - matched,
         "match_pct": round(100.0 * matched / wiup, 1) if wiup else 0.0,
@@ -76,6 +84,27 @@ def snapshot(db_path: Path) -> dict:
         "per_provinsi": per_provinsi,
         "match_strategy": match_strategy,
         "temporal": temporal,
+    }
+
+
+def kohort(db_path: Path) -> dict:
+    """Kohort kerangka 3-periode: berapa konsesi masuk analisis vs dikeluarkan.
+
+    Definisi TUNGGAL-nya to_periode() (import dari build_periode_tables) — jendela
+    izin 1998-2025; konsesi tanpa iup_year & ber-iup_year di luar jendela DIBUANG.
+    Dihitung dari DB (bukan ditulis tangan) supaya kalimat "814 dari 825" di
+    Metodologi tak bisa basi diam-diam saat data di-refresh.
+    """
+    conn = sqlite3.connect(db_path)
+    years = [r[0] for r in conn.execute("SELECT iup_year FROM wiup_geoportal")]
+    conn.close()
+    return {
+        "n_total": len(years),
+        "n_analisis": sum(1 for y in years if to_periode(y) is not None),
+        "n_tanpa_tahun": sum(1 for y in years if y is None),
+        # Di luar jendela izin 1998-2025 (saat ini semuanya iup_year 2026).
+        "n_iup_2026": sum(1 for y in years if y == 2026),
+        "n_luar_jendela": sum(1 for y in years if y is not None and to_periode(y) is None),
     }
 
 
@@ -90,7 +119,8 @@ def periode(db_path: Path) -> list[dict] | None:
     try:
         rows = conn.execute(
             "SELECT r.periode, r.rentang_tahun, r.n, r.luas_total_ha, r.luas_median_ha, "
-            "       r.loss_total_ha, r.pct_poligon, r.pct_akselerasi, r.r_luas_loss, "
+            "       r.loss_2001_2025_ha, r.pct_poligon_2001_2025, r.pct_akselerasi, "
+            "       r.r_luas_loss_2001_2025, "
             "       s.slope_ha_per_year, s.peak_year "
             "FROM periode_ringkasan r LEFT JOIN periode_slope s ON s.periode = r.periode "
             "ORDER BY CASE r.periode WHEN 'P1' THEN 1 WHEN 'P2' THEN 2 WHEN 'P3' THEN 3 ELSE 4 END"
@@ -106,10 +136,10 @@ def periode(db_path: Path) -> list[dict] | None:
             "n": r["n"],
             "luas_total_ha": round(r["luas_total_ha"]),
             "luas_median_ha": round(r["luas_median_ha"]),
-            "loss_total_ha": round(r["loss_total_ha"]),
-            "pct_poligon": r["pct_poligon"],
+            "loss_2001_2025_ha": round(r["loss_2001_2025_ha"]),
+            "pct_poligon_2001_2025": r["pct_poligon_2001_2025"],
             "pct_akselerasi": r["pct_akselerasi"],
-            "r_luas_loss": r["r_luas_loss"],
+            "r_luas_loss_2001_2025": r["r_luas_loss_2001_2025"],
             "slope_ha_per_year": r["slope_ha_per_year"],
             "peak_year": r["peak_year"],
             "is_footnote": r["periode"] == "Pra-2009",
@@ -138,34 +168,40 @@ def lapisan(db_path: Path) -> dict | None:
     out: dict = {}
     if n_atribusi:
         row = conn.execute(
-            "SELECT SUM(loss_2001_2021_ha) a, SUM(loss_sawit_tol2th_ha) b, "
-            "       SUM(loss_sawit_jeda5th_ha) c, SUM(loss_sawit_tahunsama_ha) d, "
-            "       SUM(loss_2022_2025_ha) e "
+            "SELECT SUM(loss_2001_2021_ha) a, SUM(loss_sawit_tol2th_2001_2021_ha) b, "
+            "       SUM(loss_sawit_jeda5th_2001_2021_ha) c, SUM(loss_sawit_tahunsama_2001_2021_ha) d, "
+            "       SUM(loss_2022_2025_ha) e, "
+            "       SUM(loss_2009_2021_ha) f, SUM(loss_sawit_2009_2021_ha) g "
             "FROM atribusi_sawit"
         ).fetchone()
         loss_2001_2021 = row["a"]
         loss_tol2th = row["b"]
         out["loss_2001_2021_ha"] = loss_2001_2021
-        out["loss_sawit_tol2th_ha"] = loss_tol2th
-        out["loss_sawit_jeda5th_ha"] = row["c"]
-        out["loss_sawit_tahunsama_ha"] = row["d"]
+        out["loss_sawit_tol2th_2001_2021_ha"] = loss_tol2th
+        out["loss_sawit_jeda5th_2001_2021_ha"] = row["c"]
+        out["loss_sawit_tahunsama_2001_2021_ha"] = row["d"]
         out["loss_2022_2025_ha"] = row["e"]
+        # Versi jendela era Minerba (fokus analisis): penyebut loss 2009-2021.
+        out["persen_sawit_2009_2021"] = (
+            round(100.0 * row["g"] / row["f"], 1) if row["f"] else None
+        )
         if loss_2001_2021 is not None and loss_tol2th is not None:
-            out["loss_bersih_ha"] = loss_2001_2021 - loss_tol2th
-            out["persen_sawit"] = (
+            out["loss_2001_2021_tanpa_sawit_ha"] = loss_2001_2021 - loss_tol2th
+            out["persen_sawit_2001_2021"] = (
                 round(100.0 * loss_tol2th / loss_2001_2021, 1) if loss_2001_2021 else None
             )
         else:
-            out["loss_bersih_ha"] = None
-            out["persen_sawit"] = None
+            out["loss_2001_2021_tanpa_sawit_ha"] = None
+            out["persen_sawit_2001_2021"] = None
     else:
         out["loss_2001_2021_ha"] = None
-        out["loss_sawit_tol2th_ha"] = None
-        out["loss_sawit_jeda5th_ha"] = None
-        out["loss_sawit_tahunsama_ha"] = None
+        out["loss_sawit_tol2th_2001_2021_ha"] = None
+        out["loss_sawit_jeda5th_2001_2021_ha"] = None
+        out["loss_sawit_tahunsama_2001_2021_ha"] = None
         out["loss_2022_2025_ha"] = None
-        out["loss_bersih_ha"] = None
-        out["persen_sawit"] = None
+        out["persen_sawit_2009_2021"] = None
+        out["loss_2001_2021_tanpa_sawit_ha"] = None
+        out["persen_sawit_2001_2021"] = None
 
     out["n_kelas"] = {
         r["kelas"]: r["n"]
@@ -201,6 +237,36 @@ def lapisan(db_path: Path) -> dict | None:
 
     conn.close()
     out["tile_descals"] = (db_path.resolve().parent.parent / "data" / "tiles" / "descals").is_dir()
+    return out
+
+
+def atribusi(db_path: Path) -> dict | None:
+    """Blok atribusi izin aktif (jendela era Minerba 2009-2025) — BEKAL flip
+    angka utama nanti; hero SAAT INI tetap snapshot()['loss_ha'] (1.603.251).
+    None bila tabel belum ada (DB lama) — frontend menyembunyikan blok."""
+    conn = sqlite3.connect(db_path)
+    ada = conn.execute(
+        "SELECT 1 FROM sqlite_master WHERE type='table' "
+        "AND name='atribusi_izin_aktif_ringkas'").fetchone()
+    if not ada:
+        conn.close()
+        return None
+    out: dict = {}
+    for aturan, loss, pct, n in conn.execute(
+        "SELECT aturan, loss_mulai_aturan_sampai_2025_ha, pct_hutan2009, n_kohort "
+        "FROM atribusi_izin_aktif_ringkas"):
+        # Kunci JSON ikut nama kolom baru (eks loss_ha) — jangkar jendela =
+        # kunci aturan (x0/b/c/d) pada objek induknya.
+        out[aturan.lower()] = {"loss_mulai_aturan_sampai_2025_ha": loss,
+                               "pct_hutan2009": pct, "n_kohort": n}
+    f2000 = conn.execute(
+        "SELECT COALESCE(SUM(forest_2000_ha),0) FROM wiup_loss").fetchone()[0]
+    loss0108 = conn.execute(
+        "SELECT COALESCE(SUM(loss_ha),0) FROM wiup_loss_yearly "
+        "WHERE year BETWEEN 2001 AND 2008").fetchone()[0]
+    out["hutan2009_ha"] = round(f2000 - loss0108, 2)
+    out["loss_pra2009_ha"] = round(loss0108, 2)
+    conn.close()
     return out
 
 
@@ -250,6 +316,7 @@ def main() -> int:
         "period": "2001-2025",
         "default": snapshot(args.default_db),         # minerba (batubara + logam)
         "registry": registry(args.default_db),        # badan_usaha / perizinan (utuh)
+        "kohort": kohort(args.default_db),            # kohort kerangka 3-periode (814/825)
     }
     per = periode(args.default_db)                    # 3 periode kewenangan (+Pra-2009)
     if per:
@@ -257,6 +324,9 @@ def main() -> int:
     lap = lapisan(args.default_db)                     # atribusi sawit × klasifikasi izin
     if lap is not None:
         out["lapisan"] = lap
+    atr = atribusi(args.default_db)                    # atribusi izin aktif (bekal flip)
+    if atr is not None:
+        out["atribusi"] = atr
     if args.full_db.exists():
         out["full"] = snapshot(args.full_db)          # minerba + galian C
 

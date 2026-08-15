@@ -184,7 +184,7 @@ def main(argv=None) -> int:
         for m in con.execute(
                 """SELECT kode_wiup, jenis_izin, nama_tahap_kegiatan, iup_year,
                           tanggal_berlaku, tanggal_berakhir,
-                          loss_pre_iup_ha, loss_post_iup_ha
+                          loss_2001_sampai_tahun_izin_ha, loss_tahun_izin_sampai_2025_ha
                    FROM wiup_master"""):
             m = dict(m)
             y_berlaku = tahun(m["tanggal_berlaku"])
@@ -197,8 +197,8 @@ def main(argv=None) -> int:
                 "nama_tahap_kegiatan": m["nama_tahap_kegiatan"],
                 "durasi_sk": durasi_sk,
             })
-            pre = m["loss_pre_iup_ha"] or 0.0
-            post = m["loss_post_iup_ha"] or 0.0
+            pre = m["loss_2001_sampai_tahun_izin_ha"] or 0.0
+            post = m["loss_tahun_izin_sampai_2025_ha"] or 0.0
             baris.append({
                 "kode_wiup": m["kode_wiup"],
                 "kelas": kelas,

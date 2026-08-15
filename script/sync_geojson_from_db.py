@@ -6,7 +6,9 @@ tersisa). Kini membangun ulang SELURUH FeatureCollection dari DB (825):
 geometri wiup_geoportal + loss total & per-tahun + temporal + match/badan
 usaha — sehingga file selalu sinkron dgn basis data yang dibaca web app.
 
-Konsumen: panduan QGIS (poligon temporal via iup_year), arsip web/data.js.
+Konsumen: panduan QGIS (poligon temporal via iup_year).
+(Ekspor arsip web/data.js dihapus Agu 2026 — folder web/ berisi demo statis
+pra-React sudah tak ada, jadi tak ada lagi konsumennya.)
 Jalankan SETELAH filter_minerba/match_harder (process.sh langkah 10).
 
     python3 scripts/sync_geojson_from_db.py
@@ -45,8 +47,12 @@ def build_features(conn):
         p = {k: v for k, v in d.items() if k not in GEO_SKIP}
         # loss agregat
         l = loss.get(kode, {})
-        for k in ("polygon_area_ha", "forest_2000_ha", "total_loss_ha",
-                  "loss_pct_of_polygon", "loss_pct_of_forest"):
+        # Nama jendela eksplisit (Fase B): properti geojson mengikuti kolom DB
+        # baru — konsumen QGIS/arsip membaca nama yang sama dgn kamus kolom.
+        for k in ("polygon_area_ha", "forest_2000_ha", "loss_2001_2025_ha",
+                  "loss_pct_poligon_2001_2025", "loss_2001_2025_pct_hutan2000",
+                  "loss_2001_2008_ha", "hutan_2009_ha", "loss_2009_2025_ha",
+                  "loss_2009_2025_pct_hutan2009"):
             p[k] = l.get(k)
         # loss per tahun 2001-2025 (0 bila tak ada baris)
         yl = yearly.get(kode, {})
@@ -54,8 +60,8 @@ def build_features(conn):
             p[f"loss_{y}_ha"] = round(yl.get(y, 0), 2)
         # temporal pra/pasca izin
         t = temp.get(kode, {})
-        p["rate_pre_ha_per_year"] = t.get("rate_pre_ha_per_year")
-        p["rate_post_ha_per_year"] = t.get("rate_post_ha_per_year")
+        p["rate_2001_sampai_tahun_izin_ha_per_year"] = t.get("rate_2001_sampai_tahun_izin_ha_per_year")
+        p["rate_tahun_izin_sampai_2025_ha_per_year"] = t.get("rate_tahun_izin_sampai_2025_ha_per_year")
         p["temporal_verdict"] = t.get("verdict")
         # match MinerbaOne + badan usaha
         m = match.get(kode, {})
@@ -74,7 +80,6 @@ def build_features(conn):
 def main():
     db_path = Path("data/kalimantan.db")
     out_path = Path("data/wiup/kalimantan_with_loss.geojson")
-    web_data = Path("web/data.js")
 
     conn = sqlite3.connect(db_path)
     feats = build_features(conn)
@@ -84,12 +89,6 @@ def main():
     out_path.write_text(json.dumps(gj, separators=(",", ":"), ensure_ascii=False))
     print(f"  {len(feats)} fitur → {out_path} "
           f"({out_path.stat().st_size / 1024 / 1024:.2f} MB)", file=sys.stderr)
-
-    # Arsip statis lama (web/) — dipertahankan agar demo standalone tetap jalan.
-    web_data.parent.mkdir(parents=True, exist_ok=True)
-    web_data.write_text(
-        "window.KALIMANTAN_DATA = " + json.dumps(gj, separators=(",", ":")) + ";\n")
-    print(f"  web/data.js → {web_data.stat().st_size / 1024 / 1024:.2f} MB", file=sys.stderr)
 
     strats = Counter((f["properties"].get("match_strategy") or "(unmatched)") for f in feats)
     print("  Distribusi match_strategy:", file=sys.stderr)

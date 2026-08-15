@@ -135,11 +135,11 @@ def main() -> int:
 
     # Top 10 by loss with DB info
     print("\nTop 10 konsesi dengan DB info:")
-    rows_sorted = sorted(rows, key=lambda r: -float(r["total_loss_ha"]))
+    rows_sorted = sorted(rows, key=lambda r: -float(r.get("loss_2001_2025_ha") or r.get("total_loss_ha") or 0))
     for i, r in enumerate(rows_sorted[:10], 1):
         m = "✓" if r["db_match"] == "yes" else "?"
         nu = (r["nama_usaha"] or "")[:30]
-        loss = float(r["total_loss_ha"])
+        loss = float(r.get("loss_2001_2025_ha") or r.get("total_loss_ha") or 0)
         jb = (r.get("jenis_badan_usaha") or "?")[:8]
         print(f"  {i:>2}. [{m}] {nu:<30} | loss={loss:>9,.0f}ha | "
               f"jenis={jb:<8} | NIB={r.get('nib') or '-'}")
