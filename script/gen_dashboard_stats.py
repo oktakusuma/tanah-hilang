@@ -210,6 +210,23 @@ def lapisan(db_path: Path) -> dict | None:
     }
     out["n_bukti_kuat"] = conn.execute(
         "SELECT COUNT(*) FROM klasifikasi_izin WHERE bukti = 'KUAT'").fetchone()[0]
+    # Pecahan bukti KHUSUS kelas PERPANJANGAN (KUAT vs INDIKASI) — dipakai narasi
+    # "Bagaimana metode Indikasi bekerja" di Metodologi. Beda dgn n_bukti_kuat
+    # (seluruh tabel): di data saat ini kebetulan sama, tapi jangan diandalkan.
+    out["n_bukti_perpanjangan"] = {
+        r["bukti"]: r["n"]
+        for r in conn.execute(
+            "SELECT bukti, COUNT(*) n FROM klasifikasi_izin "
+            "WHERE kelas = 'PERPANJANGAN' GROUP BY bukti")
+    }
+    # Rentang masa berlaku SK (tahun) kelas PERPANJANGAN bukti INDIKASI —
+    # dihitung dari DB supaya kalimat "durasi SK 2-19 th" tak bisa basi.
+    r = conn.execute(
+        "SELECT MIN(durasi_sk) mn, MAX(durasi_sk) mx FROM klasifikasi_izin "
+        "WHERE kelas = 'PERPANJANGAN' AND bukti = 'INDIKASI'").fetchone()
+    out["durasi_sk_perpanjangan_indikasi"] = (
+        {"min": r["mn"], "max": r["mx"]} if r["mn"] is not None else None
+    )
 
     # Pangsa "diduga perpanjangan" per periode kewenangan — dihitung di sini (bukan
     # ditulis tangan di frontend/docstring) supaya selalu sinkron dgn DB. Periode
@@ -255,10 +272,25 @@ def atribusi(db_path: Path) -> dict | None:
     for aturan, loss, pct, n in conn.execute(
         "SELECT aturan, loss_mulai_aturan_sampai_2025_ha, pct_hutan2009, n_kohort "
         "FROM atribusi_izin_aktif_ringkas"):
-        # Kunci JSON ikut nama kolom baru (eks loss_ha) — jangkar jendela =
-        # kunci aturan (x0/b/c/d) pada objek induknya.
+        # Kunci JSON = nama aturan pasca-selaras Fase G (tanpa_atribusi/
+        # indikasi/polos — eks x0/b/d; aturan c diarsipkan 15 Agu). Jangkar
+        # jendela = kunci aturan pada objek induknya.
         out[aturan.lower()] = {"loss_mulai_aturan_sampai_2025_ha": loss,
                                "pct_hutan2009": pct, "n_kohort": n}
+    # Total metode CITRA (angka utama Komparasi) — dari backtrack_laju_ringkas
+    # (scripts/build_laju_izin.py), baris agregat semua konsesi basis Hansen
+    # penuh (kotor). Dipakai Metodologi utk menaruh INDIKASI di antara POLOS
+    # dan CITRA tanpa menulis angkanya tangan. Opsional (DB lama tanpa tabel).
+    ada_bt = conn.execute(
+        "SELECT 1 FROM sqlite_master WHERE type='table' "
+        "AND name='backtrack_laju_ringkas'").fetchone()
+    if ada_bt:
+        row = conn.execute(
+            "SELECT n, total_loss_ha FROM backtrack_laju_ringkas "
+            "WHERE aturan='CITRA' AND basis='kotor' AND dimensi='semua'").fetchone()
+        if row:
+            out["laju_citra"] = {
+                "loss_mulai_aktif_sampai_2025_ha": row[1], "n": row[0]}
     f2000 = conn.execute(
         "SELECT COALESCE(SUM(forest_2000_ha),0) FROM wiup_loss").fetchone()[0]
     loss0108 = conn.execute(

@@ -204,25 +204,24 @@ COLUMN_META = [
     ("baseline_tahunan", "n_konsesi", "Jumlah konsesi yang mencatat kehilangan > 0 pada tahun itu.", "count(distinct kode_wiup) dgn loss_ha > 0", "wiup_loss_yearly"),
 
     # ── atribusi_izin_aktif: atribusi loss ke izin aktif, jendela 2009-2025 ────
-    ("atribusi_izin_aktif", "kode_wiup", "Kode WIUP konsesi (semua 825 baris, termasuk yang keluar kohort — utk audit).", None, "wiup_geoportal.kode_wiup"),
+    # Bentuk BARIS (unpivot Fase G 15 Agu): 1 baris per (konsesi, aturan) —
+    # eks aturan-jadi-kolom (mulai_b/c/d). Aturan C/PERKIRAAN diarsipkan 15 Agu
+    # (data lama di riwayat git — lihat DECISIONS.md).
+    ("atribusi_izin_aktif", "kode_wiup", "Kode WIUP konsesi (semua 825 konsesi × 3 aturan, termasuk yang keluar kohort — utk audit).", None, "wiup_geoportal.kode_wiup"),
+    ("atribusi_izin_aktif", "aturan", "Aturan atribusi baris ini: TANPA_ATRIBUSI (eks X0 — semua loss 2009-2025, pembanding) / INDIKASI (eks B — perpanjangan aktif sepanjang jendela) / POLOS (eks D — semua sejak max(2009, tahun SK)). Kosakata sama dgn backtrack_*.aturan; aturan C/PERKIRAAN diarsipkan 15 Agu.", None, "konstanta builder"),
     ("atribusi_izin_aktif", "kelas", "Kelas klasifikasi izin (IZIN_PERTAMA/PERPANJANGAN/TAK_DINILAI; tanpa baris klasifikasi = TAK_DINILAI).", None, "klasifikasi_izin.kelas"),
     ("atribusi_izin_aktif", "bukti", "Kekuatan bukti klasifikasi (KUAT/INDIKASI/NULL).", None, "klasifikasi_izin.bukti"),
     ("atribusi_izin_aktif", "iup_year", "Tahun terbit SK izin yang tercatat.", None, "wiup_geoportal.iup_year"),
-    ("atribusi_izin_aktif", "mulai_b", "Tahun pertama loss dihitung, aturan B (angka utama kandidat): perpanjangan 2009, lainnya max(2009, iup_year). NULL = keluar kohort.", "hitung_mulai()", "scripts/build_atribusi_izin.py"),
-    ("atribusi_izin_aktif", "mulai_c", "Tahun pertama loss dihitung, aturan C (sensitivitas): perpanjangan sejak perkiraan tahun izin asal iup_year+durasi_sk-20 (UU 4/2009 Ps. 47), clamp 2009; KUAT tetap 2009.", "hitung_mulai()", "scripts/build_atribusi_izin.py"),
-    ("atribusi_izin_aktif", "mulai_d", "Tahun pertama loss dihitung, aturan D (batas bawah): semua max(2009, iup_year) — menyangkal makna perpanjangan.", "hitung_mulai()", "scripts/build_atribusi_izin.py"),
-    ("atribusi_izin_aktif", "loss_2009_2025_ha", "Loss 2009-2025 penuh konsesi ini (tanpa atribusi; eks loss_x0_ha — jendela masuk nama).", "Σ loss_ha 2009-2025", "wiup_loss_yearly"),
-    ("atribusi_izin_aktif", "loss_mulai_b_sampai_2025_ha", "Loss teratribusi aturan B, jendela [mulai_b, 2025] (eks loss_b_ha — jangkar = kolom mulai_b baris ini).", "Σ loss_ha year ≥ mulai_b", "wiup_loss_yearly"),
-    ("atribusi_izin_aktif", "loss_mulai_c_sampai_2025_ha", "Loss teratribusi aturan C, jendela [mulai_c, 2025] (eks loss_c_ha).", "Σ loss_ha year ≥ mulai_c", "wiup_loss_yearly"),
-    ("atribusi_izin_aktif", "loss_mulai_d_sampai_2025_ha", "Loss teratribusi aturan D, jendela [mulai_d, 2025] (eks loss_d_ha).", "Σ loss_ha year ≥ mulai_d", "wiup_loss_yearly"),
+    ("atribusi_izin_aktif", "mulai", "Tahun pertama loss dihitung menurut `aturan` baris ini: TANPA_ATRIBUSI selalu 2009; INDIKASI = 2009 utk perpanjangan, max(2009, iup_year) lainnya; POLOS = max(2009, iup_year). NULL = keluar kohort (non-perpanjangan tanpa iup_year).", "hitung_mulai()", "scripts/build_atribusi_izin.py"),
+    ("atribusi_izin_aktif", "loss_mulai_sampai_2025_ha", "Loss teratribusi jendela [mulai, 2025] versi `aturan` baris ini (jangkar = kolom mulai baris yang sama). NULL bila mulai NULL (keluar kohort — tak terdefinisi, bukan 0).", "Σ loss_ha year ≥ mulai", "wiup_loss_yearly"),
 
 
     # ── atribusi_izin_aktif_ringkas ────────────────────────────────────────────
-    ("atribusi_izin_aktif_ringkas", "aturan", "Kode aturan atribusi: X0 (tanpa atribusi) / B (kandidat angka utama) / C (sensitivitas halus) / D (batas bawah).", None, "konstanta builder"),
+    ("atribusi_izin_aktif_ringkas", "aturan", "Aturan atribusi: TANPA_ATRIBUSI (eks X0 — pembanding/plafon) / INDIKASI (eks B) / POLOS (eks D — batas bawah). Selaras dgn kosakata backtrack_*; aturan C/PERKIRAAN diarsipkan 15 Agu.", None, "konstanta builder"),
     ("atribusi_izin_aktif_ringkas", "label", "Deskripsi satu kalimat aturan (Bahasa Indonesia).", None, "konstanta ATURAN_LABEL"),
     ("atribusi_izin_aktif_ringkas", "loss_mulai_aturan_sampai_2025_ha", "Total loss teratribusi aturan ini (jendela [mulai versi aturan, 2025], di dalam era Minerba 2009-2025; eks loss_ha — jangkar = kolom aturan baris ini).", "Σ loss per aturan", "atribusi_izin_aktif"),
     ("atribusi_izin_aktif_ringkas", "pct_hutan2009", "Persen terhadap hutan yang masih berdiri awal 2009 (= hutan-2000 − loss 2001-2008; identitas eksak, bukan estimasi).", "100·loss/(Σforest_2000 − Σloss_2001_2008)", "wiup_loss × wiup_loss_yearly"),
-    ("atribusi_izin_aktif_ringkas", "n_kohort", "Jumlah konsesi ber-mulai tidak-NULL utk aturan ini (X0 = semua konsesi).", "count(mulai NOT NULL)", "atribusi_izin_aktif"),
+    ("atribusi_izin_aktif_ringkas", "n_kohort", "Jumlah konsesi ber-mulai tidak-NULL utk aturan ini (TANPA_ATRIBUSI = semua konsesi).", "count(mulai NOT NULL)", "atribusi_izin_aktif"),
 
 
     # ── laju_izin_konsesi: laju deforestasi per jam izin (pivot laju-dulu) ──────
@@ -271,7 +270,8 @@ COLUMN_META = [
     # ── konsesi_aktif_tahunan: BERAPA konsesi aktif tiap tahun (pendamping baseline_tahunan) ──
     ("konsesi_aktif_tahunan", "year", "Tahun kalender 2001-2025.", None, None),
     ("konsesi_aktif_tahunan", "n_mulai_aktif",
-     "Jumlah KUMULATIF konsesi yang tahun mulai aktifnya (aturan E, bukti citra) sudah "
+     "Jumlah KUMULATIF konsesi yang tahun mulai aktifnya (aturan E, metode Deteksi Hansen "
+     "— codename DB: CITRA) sudah "
      "tercapai pada tahun itu. NULL utk tahun < 2009 — BUKAN nol: aturan mulai-aktif hanya "
      "berlaku sejak 2009 (jendela era Minerba), jadi angka nol di 2005 akan terbaca sebagai "
      "klaim 'tak ada konsesi aktif', padahal itu cuma batas aturan.",
@@ -281,7 +281,7 @@ COLUMN_META = [
      "Ditulis sejak 2001 karena 29 konsesi ber-iup_year pra-2009.",
      "count(iup_year <= year)", "wiup_geoportal.iup_year"),
     ("konsesi_aktif_tahunan", "n_aktif_sebelum_sk",
-     "Jumlah konsesi yang pada tahun itu SUDAH aktif menurut bukti citra TAPI SK-nya belum "
+     "Jumlah konsesi yang pada tahun itu SUDAH aktif menurut Deteksi Hansen TAPI SK-nya belum "
      "terbit (atau tak tercatat) — inilah besaran 'backtrack' yang terlihat. Dihitung "
      "LANGSUNG per konsesi, bukan selisih dua agregat (konsesi tanpa iup_year akan bikin "
      "selisih menyesatkan).",
@@ -290,10 +290,10 @@ COLUMN_META = [
 
     # ── backtrack_*: pembanding 3 metode penentuan tahun mulai (kunci kolom `aturan`) ──
     # Penanda jangkar kolom `..._mulai_...` = tahun mulai VERSI `aturan` di baris
-    # yang sama: CITRA=laju_izin_konsesi.mulai (bukti citra, UTAMA), INDIKASI=
-    # atribusi_izin_aktif.mulai_b, PERKIRAAN=mulai_c. Baris CITRA diikat invarian
-    # cek_backtrack agar identik dgn tabel utama.
-    ("backtrack_tahunan", "aturan", "Metode penentuan tahun mulai: CITRA (bukti citra, utama) / INDIKASI (kelas izin; perpanjangan → 2009) / POLOS (tanpa backtrack — murni max(2009, tahun SK)). Aturan C/PERKIRAAN diarsipkan 15 Agu: cara baca aditif membuatnya ≡ INDIKASI.", None, "scripts/build_laju_izin.py"),
+    # yang sama: CITRA=laju_izin_konsesi.mulai (label UI "Deteksi Hansen", UTAMA), INDIKASI/
+    # POLOS=atribusi_izin_aktif.mulai baris aturan yang sama. Baris CITRA diikat
+    # invarian cek_backtrack agar identik dgn tabel utama.
+    ("backtrack_tahunan", "aturan", "Metode penentuan tahun mulai: CITRA (codename internal; label UI & narasi tesis = 'Deteksi Hansen' — tahun pertama produk Hansen GFC mencatat tree-cover loss non-sawit ≥ 1 ha di poligon; metode UTAMA) / INDIKASI (kelas izin; perpanjangan → 2009) / POLOS (tanpa backtrack — murni max(2009, tahun SK)). Kode 'CITRA' sengaja DIPERTAHANKAN di DB (keputusan igoen 15 Agu) walau labelnya berganti — bukan berarti kami menafsirkan citra satelit sendiri. Aturan C/PERKIRAAN diarsipkan 15 Agu: cara baca aditif membuatnya ≡ INDIKASI.", None, "scripts/build_laju_izin.py"),
     ("backtrack_tahunan", "year", "Tahun kalender 2001-2025.", None, None),
     ("backtrack_tahunan", "n_aktif", "Kumulatif konsesi yang tahun mulainya (versi `aturan`) <= tahun ini. NULL utk tahun < 2009 (jendela hitung era Minerba — bukan nol).", "count(mulai_aturan <= year)", "scripts/build_laju_izin.py"),
     ("backtrack_tahunan", "n_sk_terbit", "Kumulatif konsesi ber-iup_year <= tahun ini (sama utk semua aturan).", "count(iup_year <= year)", "wiup_geoportal.iup_year"),
@@ -305,7 +305,7 @@ COLUMN_META = [
     # jendela TAHUN KALENDER murni, bukan kohort tahun-terbit-SK. Loss jendela =
     # Σ flow backtrack_tahunan tahun-tahun itu dari konsesi AKTIF versi aturan.
     ("backtrack_periode_kalender", "aturan", "Metode penentuan tahun mulai (CITRA/INDIKASI/POLOS) — lihat backtrack_tahunan.aturan.", None, None),
-    ("backtrack_periode_kalender", "periode", "Jendela TAHUN KALENDER (P1 2009-2014 / P2 2015-2019 / P3 2020-2025) — redefinisi 15 Agu: BUKAN kohort tahun-terbit-SK; statistik kohort-SK tetap di backtrack_periode.", None, None),
+    ("backtrack_periode_kalender", "periode", "Jendela TAHUN KALENDER (P1 2009-2014 / P2 2015-2019 / P3 2020-2025) — redefinisi 15 Agu: BUKAN kohort tahun-terbit-SK; statistik kohort-SK tetap di backtrack_kohort (eks backtrack_periode).", None, None),
     ("backtrack_periode_kalender", "tahun_awal", "Tahun kalender pertama jendela (P1=2009, P2=2015, P3=2020).", None, None),
     ("backtrack_periode_kalender", "tahun_akhir", "Tahun kalender terakhir jendela (P1=2014, P2=2019, P3=2025).", None, None),
     ("backtrack_periode_kalender", "loss_ha", "Loss Hansen PADA tahun-tahun jendela ini dari konsesi yang sudah AKTIF versi `aturan` (flow, bukan kumulatif-sejak-mulai).", "Σ backtrack_tahunan.loss_ha, year ∈ [tahun_awal, tahun_akhir]", "backtrack_tahunan"),
@@ -316,30 +316,33 @@ COLUMN_META = [
     ("backtrack_periode_kalender", "mean_luas_aktif_ha", "KUMULATIF s.d. tahun_akhir: rata-rata luas SK konsesi wilayah aktif (himpunan kumulatif yang sama dgn luas_aktif_total_ha; n = n_aktif_akhir).", "luas_aktif_total_ha / n_aktif_akhir", "wiup_geoportal.luas_sk"),
     ("backtrack_periode_kalender", "median_luas_aktif_ha", "KUMULATIF s.d. tahun_akhir: median luas SK konsesi wilayah aktif (himpunan kumulatif yang sama).", "median luas_sk atas {mulai <= tahun_akhir}", "wiup_geoportal.luas_sk"),
     ("backtrack_periode_kalender", "gini_luas_aktif", "KUMULATIF s.d. tahun_akhir: indeks Gini luas SK wilayah aktif (0 = merata, 1 = terkonsentrasi penuh); rumus selisih-berpasangan, NULL bila n<2 atau Σ=0.", "(2Σi·xᵢ)/(nΣx) − (n+1)/n atas luas_sk terurut, himpunan {mulai <= tahun_akhir}", "scripts/build_laju_izin.py"),
-    ("backtrack_periode", "aturan", "Metode tahun mulai (CITRA/INDIKASI/POLOS) — lihat backtrack_tahunan.aturan.", None, None),
-    ("backtrack_periode", "periode", "Periode kewenangan menurut iup_year (Pra-2009/P1/P2/P3; TANPA_PERIODE = iup_year kosong/di luar 1998-2025 — ember rekonsiliasi, UI tak merendernya).", None, None),
-    ("backtrack_periode", "n", "Konsesi periode ini (ber-iup_year 1998-2025).", None, None),
-    ("backtrack_periode", "n_mulai", "Subset n yang tahun mulainya terdefinisi (<= 2025) di aturan ini (INDIKASI/POLOS butuh iup_year).", None, None),
-    ("backtrack_periode", "loss_mulai_aktif_sampai_2025_ha", "Σ loss Hansen per konsesi pada jendela [mulai aktif versi aturan, 2025] (penanda mulai_aktif — DECISIONS 13 Agu; eks loss_mulai_sampai_2025_ha).", "Σ loss [mulai,2025]", "wiup_loss_yearly"),
-    ("backtrack_periode", "loss_mulai_aktif_sampai_2021_ha", "Σ loss Hansen (kotor) jendela [mulai aktif versi aturan, 2021] — pembilang dekomposisi kartu: loss_mulai_aktif_sampai_2025_ha − ini = loss 2022-2025 (tak terperiksa sawit); ini − varian tanpa_sawit = bagian berujung sawit.", "Σ loss [mulai,2021]", "wiup_loss_yearly"),
-    ("backtrack_periode", "loss_mulai_aktif_sampai_2021_tanpa_sawit_ha", "Σ max(0, loss−sawit) per tahun pada [mulai aktif, 2021] (batas Descals).", "Σ max(0, loss−sawit) [mulai,2021]", "wiup_loss_yearly × atribusi_sawit_yearly"),
-    ("backtrack_periode", "polygon_ha", "Σ luas poligon seluruh konsesi periode (penyebut pct).", None, "wiup_loss.polygon_area_ha"),
-    ("backtrack_periode", "pct_poligon_mulai_aktif_sampai_2025", "100 · loss_mulai_aktif_sampai_2025_ha / polygon_ha (eks pct_poligon_mulai_2025 — 'mulai_2025' terbaca 'mulai tahun 2025').", "100·loss/polygon", None),
-    ("backtrack_periode", "r_luas_loss", "Pearson luas_sk vs loss jendela [mulai aktif, 2025] (konsesi ber-mulai).", "pearson(luas_sk, loss)", None),
+    # backtrack_kohort (eks backtrack_periode — rename Fase G 15 Agu): kolom
+    # `kohort` = KOHORT tahun-terbit-SK, dipisah tegas dari `periode` milik
+    # backtrack_periode_kalender (jendela kalender murni).
+    ("backtrack_kohort", "aturan", "Metode tahun mulai (CITRA/INDIKASI/POLOS) — lihat backtrack_tahunan.aturan.", None, None),
+    ("backtrack_kohort", "kohort", "Kohort tahun-terbit-SK menurut iup_year (Pra-2009/P1/P2/P3; TANPA_PERIODE = iup_year kosong/di luar 1998-2025 — ember rekonsiliasi, UI tak merendernya). Eks kolom `periode` — rename Fase G supaya tak tabrakan makna dgn jendela kalender.", None, None),
+    ("backtrack_kohort", "n", "Konsesi kohort ini (ber-iup_year 1998-2025).", None, None),
+    ("backtrack_kohort", "n_mulai", "Subset n yang tahun mulainya terdefinisi (<= 2025) di aturan ini (INDIKASI/POLOS butuh iup_year).", None, None),
+    ("backtrack_kohort", "loss_mulai_aktif_sampai_2025_ha", "Σ loss Hansen per konsesi pada jendela [mulai aktif versi aturan, 2025] (penanda mulai_aktif — DECISIONS 13 Agu; eks loss_mulai_sampai_2025_ha).", "Σ loss [mulai,2025]", "wiup_loss_yearly"),
+    ("backtrack_kohort", "loss_mulai_aktif_sampai_2021_ha", "Σ loss Hansen (kotor) jendela [mulai aktif versi aturan, 2021] — pembilang dekomposisi kartu: loss_mulai_aktif_sampai_2025_ha − ini = loss 2022-2025 (tak terperiksa sawit); ini − varian tanpa_sawit = bagian berujung sawit.", "Σ loss [mulai,2021]", "wiup_loss_yearly"),
+    ("backtrack_kohort", "loss_mulai_aktif_sampai_2021_tanpa_sawit_ha", "Σ max(0, loss−sawit) per tahun pada [mulai aktif, 2021] (batas Descals).", "Σ max(0, loss−sawit) [mulai,2021]", "wiup_loss_yearly × atribusi_sawit_yearly"),
+    ("backtrack_kohort", "polygon_ha", "Σ luas poligon seluruh konsesi kohort (penyebut pct).", None, "wiup_loss.polygon_area_ha"),
+    ("backtrack_kohort", "pct_poligon_mulai_aktif_sampai_2025", "100 · loss_mulai_aktif_sampai_2025_ha / polygon_ha (eks pct_poligon_mulai_2025 — 'mulai_2025' terbaca 'mulai tahun 2025').", "100·loss/polygon", None),
+    ("backtrack_kohort", "r_luas_loss", "Pearson luas_sk vs loss jendela [mulai aktif, 2025] (konsesi ber-mulai).", "pearson(luas_sk, loss)", None),
     ("backtrack_komoditas", "aturan", "Metode tahun mulai — lihat backtrack_tahunan.aturan.", None, None),
-    ("backtrack_komoditas", "periode", "Periode kewenangan (Pra-2009/P1/P2/P3/TANPA_PERIODE).", None, None),
+    ("backtrack_komoditas", "kohort", "Kohort tahun-terbit-SK (Pra-2009/P1/P2/P3/TANPA_PERIODE) — eks kolom `periode`, rename Fase G.", None, None),
     ("backtrack_komoditas", "grup_komoditas", "BATUBARA vs MINERAL LOGAM (aturan sama dgn periode_komoditas).", None, None),
     ("backtrack_komoditas", "n", "Konsesi sel ini yang tahun mulainya terdefinisi.", None, None),
     ("backtrack_komoditas", "loss_mulai_aktif_sampai_2025_ha", "Σ loss Hansen jendela [mulai aktif versi aturan, 2025] sel ini.", "Σ loss [mulai,2025]", "wiup_loss_yearly"),
     ("backtrack_komoditas", "loss_mulai_aktif_sampai_2021_tanpa_sawit_ha", "Σ max(0, loss−sawit) [mulai aktif, 2021] sel ini.", None, "wiup_loss_yearly × atribusi_sawit_yearly"),
     ("backtrack_klasifikasi", "aturan", "Metode tahun mulai — lihat backtrack_tahunan.aturan.", None, None),
-    ("backtrack_klasifikasi", "periode", "Periode kewenangan (Pra-2009/P1/P2/P3/TANPA_PERIODE).", None, None),
+    ("backtrack_klasifikasi", "kohort", "Kohort tahun-terbit-SK (Pra-2009/P1/P2/P3/TANPA_PERIODE) — eks kolom `periode`, rename Fase G.", None, None),
     ("backtrack_klasifikasi", "kelas", "Kelas izin (IZIN_PERTAMA/PERPANJANGAN/TAK_DINILAI).", None, "klasifikasi_izin.kelas"),
     ("backtrack_klasifikasi", "n", "Konsesi sel ini yang tahun mulainya terdefinisi.", None, None),
     ("backtrack_klasifikasi", "loss_mulai_aktif_sampai_2025_ha", "Σ loss Hansen jendela [mulai aktif versi aturan, 2025] sel ini.", "Σ loss [mulai,2025]", "wiup_loss_yearly"),
     ("backtrack_stok", "aturan", "Metode tahun mulai — lihat backtrack_tahunan.aturan.", None, None),
-    ("backtrack_stok", "grup_tipe", "'periode' (P1/P2/P3/Pra-2009 via iup_year) atau 'penerbit' (pejabat).", None, None),
-    ("backtrack_stok", "grup", "Nilai grup: kode periode atau nama pejabat penerbit.", None, None),
+    ("backtrack_stok", "grup_tipe", "'kohort' (P1/P2/P3/Pra-2009 via iup_year — eks nilai 'periode', rename Fase G) atau 'penerbit' (pejabat).", None, None),
+    ("backtrack_stok", "grup", "Nilai grup: kode kohort SK atau nama pejabat penerbit.", None, None),
     ("backtrack_stok", "year", "Tahun kalender 2009-2025.", None, None),
     ("backtrack_stok", "n_aktif", "KUMULATIF s.d. tahun ini: konsesi grup yang tahun mulainya (versi `aturan`) <= tahun ini.", "count(mulai <= year)", None),
     ("backtrack_stok", "luas_aktif_ha", "KUMULATIF s.d. tahun ini: Σ luas_sk konsesi aktif grup.", None, "wiup_geoportal.luas_sk"),
@@ -347,8 +350,8 @@ COLUMN_META = [
     ("backtrack_stok", "loss_ha", "Loss tahun ini dari konsesi aktif grup (flow).", None, "wiup_loss_yearly"),
     ("backtrack_stok", "loss_kumulatif_sejak_2009_ha", "Akumulasi loss konsesi-aktif sejak 2009 s/d tahun ini (stok; eks loss_kumulatif_ha — awal akumulasi masuk nama).", "Σ loss_ha 2009..year", None),
     ("backtrack_sawit", "aturan", "Metode tahun mulai — lihat backtrack_tahunan.aturan.", None, None),
-    ("backtrack_sawit", "periode", "Periode kewenangan (Pra-2009/P1/P2/P3/TANPA_PERIODE).", None, None),
-    ("backtrack_sawit", "n", "Konsesi periode yang tahun mulainya terdefinisi.", None, None),
+    ("backtrack_sawit", "kohort", "Kohort tahun-terbit-SK (Pra-2009/P1/P2/P3/TANPA_PERIODE) — eks kolom `periode`, rename Fase G.", None, None),
+    ("backtrack_sawit", "n", "Konsesi kohort yang tahun mulainya terdefinisi.", None, None),
     ("backtrack_sawit", "loss_mulai_aktif_sampai_2021_ha", "Σ loss Hansen jendela [mulai aktif versi aturan, 2021] — penyebut pangsa sawit; berhenti 2021 (batas Descals).", "Σ loss [mulai,2021]", "wiup_loss_yearly"),
     ("backtrack_sawit", "loss_sawit_mulai_aktif_sampai_2021_ha", "Bagian yang bertepatan jadi sawit (tol2th) pada jendela yang sama.", "Σ sawit [mulai,2021]", "atribusi_sawit_yearly"),
     ("backtrack_sawit", "loss_mulai_aktif_sampai_2021_tanpa_sawit_ha", "Σ max(0, loss−sawit) per tahun pada [mulai aktif, 2021].", None, None),
@@ -850,23 +853,17 @@ COLUMN_META = [
     ("perizinan", "created_at", "Timestamp saat baris ini disalin/diperbarui ke database.", None, "proses ingest scripts/build_combined_db.py"),
 
     # ── kepadatan_penduduk: kepadatan penduduk BPS per kab/kota 2015-2024 ───────
-    ("kepadatan_penduduk", "kode_kabkot", "Kode kabupaten/kota (BPS), kunci utama tabel.",
+    # Bentuk LONG (Fase G butir 8, 15 Agu): 1 baris per (kode_kabkot, tahun) —
+    # eks kolom lebar d2015..d2024.
+    ("kepadatan_penduduk", "kode_kabkot", "Kode kabupaten/kota (BPS), bagian kunci utama bersama tahun.",
      None, "BPS"),
     ("kepadatan_penduduk", "provinsi", "Nama provinsi kabupaten/kota.", None, "BPS"),
     ("kepadatan_penduduk", "kabupaten", "Nama kabupaten/kota (versi BPS).", None, "BPS"),
     ("kepadatan_penduduk", "kab_normalized", "Nama kabupaten/kota versi baku — kanonik dipakai join lintas-tabel (wiup_geoportal).",
      None, "normalisasi nama BPS saat ingest"),
-    ("kepadatan_penduduk", "d2015", "Kepadatan penduduk tahun 2015 (lihat kolom 'satuan').", None, "BPS - Kepadatan Penduduk per Kabupaten/Kota 2015-2024"),
-    ("kepadatan_penduduk", "d2016", "Kepadatan penduduk tahun 2016 (lihat kolom 'satuan').", None, "BPS - Kepadatan Penduduk per Kabupaten/Kota 2015-2024"),
-    ("kepadatan_penduduk", "d2017", "Kepadatan penduduk tahun 2017 (lihat kolom 'satuan').", None, "BPS - Kepadatan Penduduk per Kabupaten/Kota 2015-2024"),
-    ("kepadatan_penduduk", "d2018", "Kepadatan penduduk tahun 2018 (lihat kolom 'satuan').", None, "BPS - Kepadatan Penduduk per Kabupaten/Kota 2015-2024"),
-    ("kepadatan_penduduk", "d2019", "Kepadatan penduduk tahun 2019 (lihat kolom 'satuan').", None, "BPS - Kepadatan Penduduk per Kabupaten/Kota 2015-2024"),
-    ("kepadatan_penduduk", "d2020", "Kepadatan penduduk tahun 2020 (lihat kolom 'satuan').", None, "BPS - Kepadatan Penduduk per Kabupaten/Kota 2015-2024"),
-    ("kepadatan_penduduk", "d2021", "Kepadatan penduduk tahun 2021 (lihat kolom 'satuan').", None, "BPS - Kepadatan Penduduk per Kabupaten/Kota 2015-2024"),
-    ("kepadatan_penduduk", "d2022", "Kepadatan penduduk tahun 2022 (lihat kolom 'satuan').", None, "BPS - Kepadatan Penduduk per Kabupaten/Kota 2015-2024"),
-    ("kepadatan_penduduk", "d2023", "Kepadatan penduduk tahun 2023 (lihat kolom 'satuan').", None, "BPS - Kepadatan Penduduk per Kabupaten/Kota 2015-2024"),
-    ("kepadatan_penduduk", "d2024", "Kepadatan penduduk tahun 2024 (lihat kolom 'satuan').", None, "BPS - Kepadatan Penduduk per Kabupaten/Kota 2015-2024"),
-    ("kepadatan_penduduk", "satuan", "Satuan nilai kolom d2015..d2024 (jiwa/km²).", None, "BPS"),
+    ("kepadatan_penduduk", "tahun", "Tahun data kepadatan (2015-2024), bagian kunci utama bersama kode_kabkot — eks kolom lebar d2015..d2024 (unpivot Fase G 15 Agu).", None, "BPS - Kepadatan Penduduk per Kabupaten/Kota 2015-2024"),
+    ("kepadatan_penduduk", "kepadatan", "Kepadatan penduduk kab/kota pada `tahun` baris ini (lihat kolom 'satuan').", None, "BPS - Kepadatan Penduduk per Kabupaten/Kota 2015-2024"),
+    ("kepadatan_penduduk", "satuan", "Satuan nilai kolom kepadatan (jiwa/km²).", None, "BPS"),
     ("kepadatan_penduduk", "sumber", "Sitasi sumber data baris ini (nama publikasi BPS).", None, "BPS"),
 
     # ── analysis_meta: PROVENANCE tiap tabel analisis (dokumentasi, bukan data) ─
@@ -876,6 +873,7 @@ COLUMN_META = [
     ("analysis_meta", "metode", "Cara tabel tsb dihitung (rumus/agregasi) — sumber utama isi COLUMN_META di halaman ini.",
      None, None),
     ("analysis_meta", "script", "Nama skrip Python yang membangun tabel tsb.", None, None),
+    ("analysis_meta", "status", "Status siklus-hidup tabel (Fase G 15 Agu): AKTIF = dikonsumsi UI/stats saat ini; ARSIP = generasi lama yang UI-nya sudah dihapus tapi tabel dipertahankan utk audit/naskah; PROYEKSI = ≈ proyeksi metode POLOS dgn jendela lebih lebar (periode/penerbit_tahunan_aktif).", None, "konstanta ANALYSIS_STATUS (scripts/build_periode_tables.py)"),
 
     # ── column_meta: kamus kolom (tabel ini sendiri — dokumentasi meta) ────────
     ("column_meta", "nama_tabel", "Nama tabel/view pemilik kolom (bagian kunci utama, bersama nama_kolom).", None, None),
@@ -964,9 +962,7 @@ JENDELA_DESKRIPSI = {
     ("periode_sawit", "n_konsesi"): "Data sawit menjangkau kehilangan 2001-2021.",
     ("klasifikasi_izin", "pra_izin_dominan"): "Kehilangan yang dibandingkan: 2001 s.d. iup_year−1 vs iup_year s.d. 2025.",
     # atribusi izin aktif — jendela era Minerba
-    ("atribusi_izin_aktif", "loss_mulai_b_sampai_2025_ha"): "Jendela era Minerba 2009-2025, sejak mulai_b.",
-    ("atribusi_izin_aktif", "loss_mulai_c_sampai_2025_ha"): "Jendela era Minerba 2009-2025, sejak mulai_c.",
-    ("atribusi_izin_aktif", "loss_mulai_d_sampai_2025_ha"): "Jendela era Minerba 2009-2025, sejak mulai_d.",
+    ("atribusi_izin_aktif", "loss_mulai_sampai_2025_ha"): "Jendela era Minerba 2009-2025, sejak `mulai` versi aturan baris ini.",
     # laju per tahun-mulai-aktif (aturan E)
     ("laju_izin_konsesi", "laju_mulai_aktif_sampai_2025_ha_thn"): "Jendela: tahun mulai aktif s.d. 2025 (Hansen penuh).",
     ("laju_izin_konsesi", "laju_mulai_aktif_sampai_2025_pct_thn"): "Jendela: tahun mulai aktif s.d. 2025 (Hansen penuh).",
@@ -1531,6 +1527,32 @@ def build_baseline_tahunan(con, table_name):
                     (y, round(agg[y], 2), cnt[y]))
 
 
+# ── Status siklus-hidup tabel di analysis_meta (Fase G butir 7, 15 Agu) ──────
+# AKTIF (default) = dikonsumsi UI/stats saat ini. ARSIP = generasi kohort-SK
+# lama: bloknya sudah dihapus dari UI (cleanup 12 Agu r3 / Fase F) tapi tabel
+# sengaja dipertahankan utk audit & naskah tesis — masih dikirim /api/periode,
+# tak dirender. PROYEKSI = periode/penerbit_tahunan_aktif: praktis proyeksi
+# metode POLOS — deret flow/stok year>=2009-nya TERBUKTI identik (EXCEPT = 0
+# baris) dgn backtrack_stok aturan POLOS; bedanya hanya jendela lebih lebar
+# (baris 2001-2008 + akumulasi sejak 2001, dan kohort Pra-2009 berakumulasi
+# sejak iup_year, bukan diklem 2009) — karena beda jendela itu ia TETAP tabel,
+# bukan view (keputusan Fase G butir 6).
+ANALYSIS_STATUS = {
+    "periode_komoditas": "ARSIP",
+    "periode_komoditas_bersih": "ARSIP",
+    "periode_signifikansi": "ARSIP",
+    "periode_signifikansi_bersih": "ARSIP",
+    "periode_klasifikasi": "ARSIP",
+    "periode_klasifikasi_uji": "ARSIP",
+    "periode_sawit": "ARSIP",
+    "periode_ringkasan_bersih": "ARSIP",
+    "periode_tahunan_aktif_bersih": "ARSIP",
+    "laju_izin_eventstudy": "ARSIP",
+    "periode_tahunan_aktif": "PROYEKSI",
+    "penerbit_tahunan_aktif": "PROYEKSI",
+}
+
+
 def existing_meta_rows(meta, table_names):
     """Buang baris provenance untuk tabel yang TIDAK ada di DB.
 
@@ -1768,9 +1790,14 @@ def main() -> int:
 
     # ── 8. analysis_meta (PROVENANCE) ─────────────────────────────────────────
     con.execute("DROP TABLE IF EXISTS analysis_meta")
+    # Kolom status (Fase G butir 7): AKTIF / ARSIP / PROYEKSI — lihat
+    # ANALYSIS_STATUS di atas. Konsumen lama (db_browser, halaman Database)
+    # membaca kolom eksplisit, jadi kolom tambahan ini tak merusak.
     con.execute(
         """CREATE TABLE analysis_meta (
-            nama_tabel TEXT PRIMARY KEY, deskripsi TEXT, sumber TEXT, metode TEXT, script TEXT)"""
+            nama_tabel TEXT PRIMARY KEY, deskripsi TEXT, sumber TEXT, metode TEXT,
+            script TEXT, status TEXT NOT NULL DEFAULT 'AKTIF'
+            CHECK (status IN ('AKTIF','ARSIP','PROYEKSI')))"""
     )
     meta = [
         # ── Tabel pengukuran INTI (dibangun scripts/build_combined_db.py) —
@@ -1818,11 +1845,12 @@ def main() -> int:
          "pencocokan ke wiup_geoportal.sk_iup (lihat wiup_match & scripts/match_harder.py).",
          "scripts/build_combined_db.py"),
         ("kepadatan_penduduk",
-         "Kepadatan penduduk BPS per kabupaten/kota Kalimantan, 2015-2024.",
+         "Kepadatan penduduk BPS per kabupaten/kota Kalimantan, 2015-2024 — bentuk LONG "
+         "(1 baris per kab×tahun; unpivot Fase G 15 Agu, eks kolom lebar d2015..d2024).",
          "data/kepadatan_penduduk.csv (BPS — Kepadatan Penduduk per Kabupaten/Kota 2015-2024)",
-         "Ingest 1:1 dari CSV committed (bukan lagi ditempel manual di luar pipeline — lihat "
-         "docstring step_kepadatan()); kab_normalized dinormalkan saat ingest agar konsisten "
-         "join ke wiup_geoportal.kab_normalized.",
+         "Ingest dari CSV committed (formatnya tetap lebar ala BPS; di-unpivot saat ingest "
+         "step_kepadatan() jadi kolom tahun+kepadatan); kab_normalized dinormalkan saat "
+         "ingest agar konsisten join ke wiup_geoportal.kab_normalized.",
          "scripts/build_combined_db.py"),
         ("wiup_master",
          "VIEW siap-query: gabungan wiup_geoportal × wiup_loss × wiup_temporal × wiup_match (825 baris).",
@@ -1869,8 +1897,11 @@ def main() -> int:
          "r=Pearson(luas_sk vs loss_2001_2025_ha / rate_tahun_izin_sampai_2025).",
          "scripts/build_periode_tables.py"),
         ("periode_tahunan_aktif",
-         "Deret stok IZIN-AKTIF per periode-tahun: tiap konsesi dihitung sejak "
-         "iup_year-nya sendiri (pra-izin tak pernah masuk).",
+         "Deret stok IZIN-AKTIF per kohort-SK per tahun: tiap konsesi dihitung sejak "
+         "iup_year-nya sendiri (pra-izin tak pernah masuk). STATUS PROYEKSI (Fase G): "
+         "praktis proyeksi metode POLOS — deret year>=2009 identik-terbukti (EXCEPT=0) "
+         "dgn backtrack_stok aturan POLOS grup_tipe='kohort'; beda hanya baris 2001-2008 "
+         "+ akumulasi sejak 2001 (kohort Pra-2009 sejak iup_year, tak diklem 2009).",
          "wiup_loss_yearly × wiup_geoportal(iup_year, luas_sk) × wiup_loss(forest_2000_ha)",
          "Atas izin ber-iup_year <= tahun: n_konsesi_aktif (jumlah), luas_aktif_ha "
          "(Σ luas_sk), forest_aktif_ha (Σ hutan-2000), loss_ha (loss tahun itu), "
@@ -1878,7 +1909,10 @@ def main() -> int:
          "2001). BASIS periode_slope (since-permit).",
          "scripts/build_periode_tables.py"),
         ("penerbit_tahunan_aktif",
-         "Deret stok izin-aktif per PENERBIT (Bupati/Gubernur/Menteri) per tahun.",
+         "Deret stok izin-aktif per PENERBIT (Bupati/Gubernur/Menteri) per tahun. "
+         "STATUS PROYEKSI (Fase G): ≈ backtrack_stok aturan POLOS grup_tipe='penerbit' "
+         "(deret year>=2009 identik-terbukti, EXCEPT=0); beda hanya jendela 2001-2008 "
+         "+ akumulasi sejak 2001.",
          "wiup_loss_yearly × wiup_geoportal(iup_year, pejabat, luas_sk) × wiup_loss(forest_2000_ha)",
          "Akuntansi sama dgn periode_tahunan_aktif tapi group by pejabat; mencakup "
          "SEMUA konsesi ber-iup_year 1998-2025 termasuk kohort Pra-2009 (Menteri "
@@ -1981,15 +2015,19 @@ def main() -> int:
          "1 baris/kolom terdokumentasi; kolom turunan diisi rumus+sumber, kolom mentah cukup deskripsi.",
          "scripts/build_periode_tables.py"),
         ("atribusi_izin_aktif",
-         "Atribusi loss ke IZIN AKTIF per konsesi, jendela era Minerba 2009-2025: tahun mulai & loss per aturan X0/B/C/D.",
+         "Atribusi loss ke IZIN AKTIF, jendela era Minerba 2009-2025 — bentuk BARIS "
+         "(unpivot Fase G 15 Agu): 1 baris per (konsesi, aturan TANPA_ATRIBUSI/INDIKASI/POLOS).",
          "wiup_geoportal × klasifikasi_izin × wiup_loss_yearly",
-         "Aturan B (kandidat angka utama): PERPANJANGAN aktif sepanjang jendela; IZIN_PERTAMA/TAK_DINILAI sejak max(2009, iup_year). "
-         "C: perpanjangan sejak perkiraan tahun izin asal (iup_year+durasi_sk-20, Ps. 47 UU 4/2009; KUAT=2009). D: semua sejak max(2009, iup_year).",
+         "TANPA_ATRIBUSI (eks X0): semua loss 2009-2025, mulai=2009. INDIKASI (eks B): "
+         "PERPANJANGAN aktif sepanjang jendela; IZIN_PERTAMA/TAK_DINILAI sejak max(2009, iup_year). "
+         "POLOS (eks D): semua sejak max(2009, iup_year). Aturan C/PERKIRAAN "
+         "(iup_year+durasi_sk-20, Ps. 47) DIARSIPKAN 15 Agu & setop ditulis — data lama di riwayat git.",
          "scripts/build_atribusi_izin.py"),
         ("atribusi_izin_aktif_ringkas",
          "Ringkasan 1 baris/aturan — SUMBER TUNGGAL angka atribusi (loss, % hutan-2009, n kohort).",
          "atribusi_izin_aktif",
-         "Σ loss per aturan; pct = 100·loss/(Σforest_2000 − Σloss 2001-2008).",
+         "Σ loss per aturan (TANPA_ATRIBUSI/INDIKASI/POLOS — selaras kosakata backtrack_*); "
+         "pct = 100·loss/(Σforest_2000 − Σloss 2001-2008).",
          "scripts/build_atribusi_izin.py"),
         # ── Pivot "laju dulu, periode belakangan" (spec 2026-08-12-laju-izin-pivot) ─
         ("laju_izin_konsesi",
@@ -2004,22 +2042,27 @@ def main() -> int:
          "Bersih NULL bila mulai > 2021 atau lapisan sawit absen.",
          "scripts/build_laju_izin.py"),
         ("laju_izin_ringkas",
-         "Distribusi laju deforestasi (median/mean/p25/p75/p90) per basis × dimensi "
-         "(semua / kelas izin / periode kewenangan).",
-         "laju_izin_konsesi",
-         "Persentil interpolasi linier atas laju ha/thn & %/thn kohort; dimensi periode "
-         "hanya P1-P3 (Pra-2009 & di-luar-jendela bukan bagian perbandingan).",
+         "VIEW kompatibilitas (Fase G 15 Agu): distribusi laju deforestasi "
+         "(median/mean/p25/p75/p90) per basis × dimensi — baris CITRA dari "
+         "backtrack_laju_ringkas (dulu tabel kembar yang dihitung terpisah).",
+         "backtrack_laju_ringkas (WHERE aturan='CITRA')",
+         "CREATE VIEW ... SELECT semua kolom non-aturan FROM backtrack_laju_ringkas "
+         "WHERE aturan='CITRA' — terbukti EXCEPT dua arah 0 baris vs tabel lama; "
+         "dimensi periode hanya P1-P3 (Pra-2009 & di-luar-jendela bukan bagian perbandingan).",
          "scripts/build_laju_izin.py"),
         ("backtrack_tahunan",
          "Pembanding 3 metode backtrack — flow loss & jumlah konsesi aktif per tahun "
-         "per aturan (CITRA/INDIKASI/POLOS).",
+         "per aturan (CITRA/INDIKASI/POLOS). CITRA = codename internal utk metode "
+         "'Deteksi Hansen' (label UI & tesis).",
          "laju_izin_konsesi × atribusi_izin_aktif × wiup_loss_yearly × atribusi_sawit_yearly",
-         "aturan CITRA pakai laju_izin_konsesi.mulai; INDIKASI pakai atribusi_izin_aktif."
-         "mulai_b; POLOS pakai mulai_d. Baris CITRA diikat invarian == tabel utama.",
+         "aturan CITRA pakai laju_izin_konsesi.mulai; INDIKASI/POLOS pakai "
+         "atribusi_izin_aktif.mulai baris aturan yang sama (bentuk unpivot Fase G). "
+         "Baris CITRA diikat invarian == tabel utama.",
          "scripts/build_laju_izin.py"),
-        ("backtrack_periode",
-         "Loss per periode kewenangan per metode backtrack, jendela [mulai, 2025] "
-         "(+varian tanpa-sawit [mulai, 2021]).",
+        ("backtrack_kohort",
+         "Loss per KOHORT tahun-terbit-SK per metode backtrack, jendela [mulai, 2025] "
+         "(+varian tanpa-sawit [mulai, 2021]) — eks backtrack_periode, rename Fase G "
+         "15 Agu (kolom kohort, supaya tak tabrakan makna dgn backtrack_periode_kalender).",
          "laju_izin_konsesi × atribusi_izin_aktif × wiup_loss_yearly",
          "Σ per konsesi loss jendela [mulai versi aturan, 2025], group by to_periode(iup_year).",
          "scripts/build_laju_izin.py"),
@@ -2037,23 +2080,27 @@ def main() -> int:
          "jendela) — ikut metode; kohort-SK statis tetap di periode_ringkasan.",
          "scripts/build_laju_izin.py"),
         ("backtrack_komoditas",
-         "Loss per (periode × grup komoditas) per metode backtrack.",
-         "backtrack_periode + wiup_geoportal.komoditas",
-         "Sel = periode × {BATUBARA, MINERAL LOGAM}; jendela [mulai, 2025].",
+         "Loss per (kohort SK × grup komoditas) per metode backtrack (kolom kohort — "
+         "eks periode, rename Fase G).",
+         "backtrack_kohort + wiup_geoportal.komoditas",
+         "Sel = kohort × {BATUBARA, MINERAL LOGAM}; jendela [mulai, 2025].",
          "scripts/build_laju_izin.py"),
         ("backtrack_klasifikasi",
-         "Loss per (periode × kelas izin) per metode backtrack.",
-         "backtrack_periode + klasifikasi_izin.kelas",
-         "Sel = periode × kelas; jendela [mulai, 2025].",
+         "Loss per (kohort SK × kelas izin) per metode backtrack (kolom kohort — "
+         "eks periode, rename Fase G).",
+         "backtrack_kohort + klasifikasi_izin.kelas",
+         "Sel = kohort × kelas; jendela [mulai, 2025].",
          "scripts/build_laju_izin.py"),
         ("backtrack_stok",
-         "Akumulasi konsesi AKTIF per tahun per metode backtrack (grup periode / penerbit) "
-         "— versi backtrack dari periode_tahunan_aktif & penerbit_tahunan_aktif.",
+         "Akumulasi konsesi AKTIF per tahun per metode backtrack (grup_tipe kohort / "
+         "penerbit — nilai 'kohort' eks 'periode', rename Fase G) — versi backtrack "
+         "dari periode_tahunan_aktif & penerbit_tahunan_aktif.",
          "laju_izin_konsesi × atribusi_izin_aktif × wiup_geoportal × wiup_loss_yearly",
          "Aktif = mulai versi aturan <= tahun; loss flow & kumulatif sejak 2009.",
          "scripts/build_laju_izin.py"),
         ("backtrack_sawit",
-         "Pangsa sawit di jendela [mulai, 2021] per periode per metode backtrack.",
+         "Pangsa sawit di jendela [mulai, 2021] per kohort SK per metode backtrack "
+         "(kolom kohort — eks periode, rename Fase G).",
          "atribusi_sawit_yearly × laju_izin_konsesi × atribusi_izin_aktif",
          "Penyebut = loss [mulai, 2021] (batas Descals); persen = 100·sawit/loss.",
          "scripts/build_laju_izin.py"),
@@ -2083,13 +2130,14 @@ def main() -> int:
          "Sampel = konsesi P1/P2/P3 ber-mulai; kosong bila scipy absen saat build.",
          "scripts/build_laju_izin.py"),
         ("konsesi_aktif_tahunan",
-         "Berapa konsesi yang sudah aktif tiap tahun (deret kumulatif) menurut bukti citra "
-         "vs menurut tanggal SK — pendamping baseline_tahunan yang isinya hektar.",
-         "laju_izin_konsesi × wiup_geoportal",
-         "n_mulai_aktif = kumulatif count(mulai <= year), NULL sebelum 2009 (aturan mulai-aktif "
-         "hanya berlaku sejak 2009); n_sk_terbit = kumulatif count(iup_year <= year); "
-         "n_aktif_sebelum_sk dihitung langsung per konsesi (mulai <= year AND iup_year > year "
-         "atau iup_year NULL), bukan selisih dua agregat.",
+         "VIEW kompatibilitas (Fase G 15 Agu): berapa konsesi yang sudah aktif tiap tahun "
+         "(deret kumulatif) menurut Deteksi Hansen vs tanggal SK — baris CITRA dari "
+         "backtrack_tahunan (dulu tabel kembar; pendamping baseline_tahunan yang isinya hektar).",
+         "backtrack_tahunan (WHERE aturan='CITRA')",
+         "CREATE VIEW ... SELECT year, n_aktif AS n_mulai_aktif, n_sk_terbit, "
+         "n_aktif_sebelum_sk FROM backtrack_tahunan WHERE aturan='CITRA' — terbukti "
+         "EXCEPT dua arah 0 baris vs tabel lama. n_mulai_aktif NULL sebelum 2009 "
+         "(aturan mulai-aktif hanya berlaku sejak 2009 — batas aturan, bukan nol temuan).",
          "scripts/build_laju_izin.py"),
         ("laju_izin_eventstudy",
          "Loss per tahun-relatif-terbit-izin (rel_year = tahun − iup_year) per kelas izin — "
@@ -2125,8 +2173,9 @@ def main() -> int:
     if not has_bersih:
         existing -= {"periode_ringkasan" + BERSIH_SUFFIX, "periode_tahunan_aktif" + BERSIH_SUFFIX,
                      "periode_komoditas" + BERSIH_SUFFIX, "periode_signifikansi" + BERSIH_SUFFIX}
-    con.executemany("INSERT INTO analysis_meta VALUES (?,?,?,?,?)",
-                    existing_meta_rows(meta, existing))
+    con.executemany("INSERT INTO analysis_meta VALUES (?,?,?,?,?,?)",
+                    [row + (ANALYSIS_STATUS.get(row[0], "AKTIF"),)
+                     for row in existing_meta_rows(meta, existing)])
 
     con.commit()
     # DB dilayani read-only tanpa dir writable → mode DELETE (bukan WAL).

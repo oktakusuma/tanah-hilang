@@ -25,6 +25,7 @@ Tanah Hilang/
 ├── data/                                # INPUT mentah (sudah disertakan)
 │   ├── minerba-kalimantan.db            #   MinerbaOne: 7.572 badan usaha + 8.461 izin
 │   ├── kepadatan_penduduk.csv           #   BPS: kepadatan 56 kab/kota, 2015–2024
+│                                        #   (bentuk lebar d2015..d2024; di-unpivot saat ingest)
 │   ├── wiup/
 │   │   ├── kalimantan_raw.geojson       #   snapshot WIUP dari Geoportal (±1.765)
 │   │   └── kalimantan_unique.geojson    #   input kanonik analisis — lihat ralat di bawah
@@ -103,12 +104,15 @@ BPS** (batas & kepadatan kabupaten).
   dilaporkan sebagai konteks: **1.603.251 ha** (**40,7%** dari hutan-2000).
 - **Tiga metode "backtrack"** menentukan tahun MULAI menghitung kehilangan per
   konsesi (kolom `aturan` di semua tabel `backtrack_*`):
-  - **CITRA** (utama) — jam mulai dari **bukti citra satelit**: tahun pertama
-    dalam jendela bukti 2001–2021 dengan kehilangan **non-sawit ≥ 1 ha**
-    (ambang ±11 piksel Hansen 30 m; jendela bukti berhenti 2021 = batas peta
-    Descals), lalu `mulai` **diklem ≥ 2009** (jendela hitung era Minerba).
-    Kohort **825** (semua konsesi — izin 2026/tanpa-tahun tetap masuk bila ada
-    bukti).
+  - **Deteksi Hansen** (utama) — **codename di basis data: `aturan='CITRA'`**
+    (kode sengaja TIDAK di-rename supaya query/skrip lama tetap jalan; label
+    yang dipakai di web app & naskah tesis adalah "Deteksi Hansen"). Jam mulai
+    dibaca dari **produk Hansen GFC** — bukan dari interpretasi citra satelit
+    sendiri: tahun pertama dalam jendela bukti 2001–2021 yang mencatat
+    *tree-cover loss* **non-sawit ≥ 1 ha** di dalam poligon (ambang ±11 piksel
+    Hansen 30 m; jendela bukti berhenti 2021 = batas peta Descals), lalu
+    `mulai` **diklem ≥ 2009** (jendela hitung era Minerba). Kohort **825**
+    (semua konsesi — izin 2026/tanpa-tahun tetap masuk bila ada bukti).
   - **INDIKASI** — dari **kelas izin** (`klasifikasi_izin`): PERPANJANGAN
     dianggap aktif sepanjang jendela (mulai 2009 — kegiatan sudah berjalan
     sebelum SK perpanjangannya); IZIN_PERTAMA/TAK_DINILAI sejak
@@ -117,17 +121,29 @@ BPS** (batas & kepadatan kabupaten).
     bawah, menyangkal makna perpanjangan). Kohort **814** (825 − 7 tanpa
     tahun SK − 4 ber-SK 2026).
   - *(Aturan lama "C/PERKIRAAN" — perkiraan tahun izin asal via durasi SK,
-    Ps. 47 UU 4/2009 — sudah **diarsipkan** dari tabel backtrack; jejaknya
-    masih ada sebagai kolom `mulai_c` di `atribusi_izin_aktif` untuk audit.)*
+    Ps. 47 UU 4/2009 — sudah **diarsipkan**: setop ditulis, baik di tabel
+    `backtrack_*` maupun di `atribusi_izin_aktif` (kolom `mulai_c` /
+    `loss_mulai_c_sampai_2025_ha` sudah tidak ada). Alasannya: dengan cara baca
+    aditif yang benar, taksirannya selalu jatuh < 2009 → terklem → C ≡ INDIKASI.
+    Datanya bisa diambil kembali dari riwayat git bila diperlukan untuk audit.)*
+  - *(**`TANPA_ATRIBUSI`** — eks kode `X0`, `mulai` selalu 2009 — muncul di
+    `atribusi_izin_aktif` sebagai **plafon pembanding**, BUKAN metode
+    backtrack: ia sekadar "semua kehilangan era Minerba, tanpa atribusi izin
+    apa pun". Karena itu ia tidak ada di keluarga `backtrack_*`.)*
 
   Rekonsiliasi total loss jendela `[mulai, 2025]` (basis kotor Hansen):
-  **CITRA 1.227.970 · INDIKASI 1.038.362 · POLOS 589.487 ha**.
+  **Deteksi Hansen/CITRA 1.227.970 · INDIKASI 1.038.362 · POLOS 589.487 ha**
+  (plafon `TANPA_ATRIBUSI` = 1.228.077 ha).
+- **Kosakata `aturan` diselaraskan** (Fase G): kode huruf lama `X0`/`B`/`D`
+  diganti nama panjang `TANPA_ATRIBUSI`/`INDIKASI`/`POLOS` di seluruh basis
+  data, sehingga `atribusi_izin_aktif` dan keluarga `backtrack_*` memakai
+  kosakata yang sama.
 - **Periode P1/P2/P3** dalam kerangka utama kini **jendela TAHUN KALENDER** —
   P1 2009–2014 (kewenangan kabupaten) · P2 2015–2019 (provinsi) · P3 2020–2025
   (pusat) — yaitu *kapan* kehilangan terjadi (tabel
   `backtrack_periode_kalender`), **bukan** kohort tahun terbit SK. Tabel
-  kohort-SK (`periode_*`, `backtrack_periode`) tetap dibangun sebagai
-  pembanding.
+  kohort-SK (`periode_*`, dan **`backtrack_kohort`** — eks `backtrack_periode`,
+  kolomnya kini `kohort`, bukan `periode`) tetap dibangun sebagai pembanding.
 - **Sawit (Descals dkk. 2024) first-class**: basis "**bersih**" = Hansen −
   sawit, hanya sampai **2021** (batas peta Descals); tahun **2022–2025 tak
   terperiksa** — tidak pernah dimasukkan ke penyebut persen mana pun, dan
@@ -282,27 +298,46 @@ TAK_DINILAI × `bukti` ∈ KUAT / INDIKASI. Hasilnya jadi dasar metode
 ```bash
 python script/build_atribusi_izin.py --db data/kalimantan.db
 ```
-→ tabel **`atribusi_izin_aktif`** (per konsesi, 825 baris) +
-**`atribusi_izin_aktif_ringkas`**. Menjawab pertanyaan ATRIBUSI: berapa hutan
-hilang **ketika izinnya benar-benar berlaku**, di jendela era UU Minerba
-2009–2025 — dengan beberapa aturan `mulai` per konsesi (X0 pembanding tanpa
-atribusi; B = PERPANJANGAN aktif sepanjang jendela → dasar metode INDIKASI;
-C = perkiraan tahun izin asal, diarsipkan sebagai sensitivitas; D = semua sejak
-max(2009, tahun SK) → dasar metode POLOS). **Prasyarat keras langkah 13–14.**
+→ tabel **`atribusi_izin_aktif`** + **`atribusi_izin_aktif_ringkas`** (3 baris,
+1 per aturan). Menjawab pertanyaan ATRIBUSI: berapa hutan hilang **ketika
+izinnya benar-benar berlaku**, di jendela era UU Minerba 2009–2025.
+
+**Bentuk baris (unpivot, Fase G):** satu baris per **(konsesi, aturan)** —
+825 × 3 = **2.475 baris**, kolom `aturan` + `mulai` +
+`loss_mulai_sampai_2025_ha`. Dulu aturan menjadi *kolom*
+(`mulai_b`/`mulai_c`/`mulai_d` dst.); bentuk itu sudah ditinggalkan. Tiga nilai
+`aturan`: **`TANPA_ATRIBUSI`** (eks X0 — plafon pembanding, `mulai` = 2009),
+**`INDIKASI`** (eks B — PERPANJANGAN aktif sepanjang jendela → dasar metode
+INDIKASI), **`POLOS`** (eks D — semua sejak max(2009, tahun SK) → dasar metode
+POLOS). Aturan C/PERKIRAAN **setop ditulis** (diarsipkan, lihat Kerangka).
+
+**Konsesi tanpa jangkar** (non-perpanjangan tanpa tahun SK — 7 dari 825):
+barisnya tetap ditulis untuk audit, tetapi `mulai` **dan**
+`loss_mulai_sampai_2025_ha` bernilai **NULL** (bukan 0 — 0 akan terbaca sebagai
+"diukur, hasilnya nol"). Pasangan NULL ini ditegakkan invarian
+`atribusi-null-berpasangan` di `verify_invariants.py`.
+
+**Prasyarat keras langkah 13–14.**
 
 **13 — Laju deforestasi per "jam izin" + tabel backtrack 3 metode**
 ```bash
 python script/build_laju_izin.py --db data/kalimantan.db
 ```
-→ tabel **`laju_izin_konsesi`** / **`laju_izin_ringkas`** /
-**`laju_izin_eventstudy`**, **`konsesi_aktif_tahunan`**, dan **10 tabel
-`backtrack_*`** (lihat §5). Pivot "laju dulu, periode belakangan": tiap konsesi
-diberi tahun `mulai` versi CITRA (bukti citra — lihat Kerangka di atas), lalu
-laju dihitung dua **basis yang tak pernah dicampur**: **bersih** (Hansen −
-sawit, ≤2021 — utama) dan **kotor** (Hansen penuh, ≤2025 — pendamping).
-Tabel `backtrack_*` mengulang akuntansi yang sama untuk KETIGA metode
-(CITRA/INDIKASI/POLOS) sebagai analisis sensitivitas. Butuh
-`atribusi_izin_aktif` (langkah 12).
+→ tabel **`laju_izin_konsesi`** / **`laju_izin_eventstudy`** + **10 tabel
+`backtrack_*`** + **2 VIEW kompatibilitas** (lihat §5). Pivot "laju dulu,
+periode belakangan": tiap konsesi diberi tahun `mulai` versi **Deteksi Hansen**
+(codename `CITRA` — lihat Kerangka di atas), lalu laju dihitung dua **basis
+yang tak pernah dicampur**: **bersih** (Hansen − sawit, ≤2021 — utama) dan
+**kotor** (Hansen penuh, ≤2025 — pendamping). Tabel `backtrack_*` mengulang
+akuntansi yang sama untuk KETIGA metode (CITRA/INDIKASI/POLOS) sebagai analisis
+sensitivitas. Butuh `atribusi_izin_aktif` (langkah 12).
+
+> **Fase G — `laju_izin_ringkas` & `konsesi_aktif_tahunan` kini VIEW**, bukan
+> tabel: keduanya hanyalah irisan `aturan='CITRA'` dari
+> `backtrack_laju_ringkas` / `backtrack_tahunan`. Sebelumnya keduanya tabel
+> terpisah yang dihitung ulang — sumber drift senyap bila salah satu jalur
+> berubah. Nama & kolomnya dipertahankan supaya query lama tetap jalan; isinya
+> terbukti identik (EXCEPT dua arah = 0 baris).
 
 **14 — Bangun tabel analisis 3 periode kewenangan izin**
 ```bash
@@ -310,7 +345,7 @@ python script/build_periode_tables.py --db data/kalimantan.db
 ```
 → tabel `periode_*` (kohort tahun SK — pembanding kerangka kalender),
 `penerbit_tahunan_aktif`, `baseline_tahunan`, + **`analysis_meta`** (provenance
-per tabel: sumber + metode + skrip) + **`column_meta`** (kamus kolom dua arah:
+per tabel: sumber + metode + skrip + **kolom `status`**) + **`column_meta`** (kamus kolom dua arah:
 arti + rumus + sumber tiap kolom, diverifikasi 100% terhadap
 `PRAGMA table_info`). Periode dari tahun terbit izin (`iup_year`): Pra-2009 ·
 P1 2009–2014 (UU 4/2009) · P2 2015–2019 (UU 23/2014) · P3 2020–2025
@@ -322,16 +357,34 @@ dikeluarkan → 814/825 dianalisis), deforestasi 2001–2025. Dijalankan
 langkah 12–13 (varian `periode_*_bersih` dibangun dari lapisan sawit bila
 terisi; tabel signifikansi butuh scipy, ditulis kosong/NULL bila absen).
 
-**14b — Ulangi laju + periode untuk data-full (degradasi anggun)**
+> **Fase G — kolom `status` di `analysis_meta`.** Tiap baris provenansi kini
+> ditandai salah satu dari tiga status, supaya pembaca tahu tabel mana yang
+> masih menopang kesimpulan dan mana yang tinggal jejak:
+> **`AKTIF`** (31 tabel — dipakai kerangka utama) · **`ARSIP`** (10 — dibangun,
+> tapi sudah tidak dipakai menyimpulkan; mis. keluarga `periode_*_bersih`,
+> `periode_klasifikasi*`, `laju_izin_eventstudy`) · **`PROYEKSI`** (2 —
+> `periode_tahunan_aktif` & `penerbit_tahunan_aktif`: tetap **tabel**, bukan
+> view, dan isinya proyeksi kohort-SK, bukan pengukuran kerangka utama).
+> ```bash
+> sqlite3 data/kalimantan.db "SELECT status, COUNT(*) FROM analysis_meta GROUP BY status"
+> ```
+
+**14b — Ulangi klasifikasi + atribusi + laju + periode untuk data-full
+(degradasi anggun)**
 ```bash
-python script/build_laju_izin.py --db data-full/kalimantan.db
-python script/build_periode_tables.py --db data-full/kalimantan.db
+python script/klasifikasi_perpanjangan.py --db data-full/kalimantan.db
+python script/build_atribusi_izin.py     --db data-full/kalimantan.db
+python script/build_laju_izin.py         --db data-full/kalimantan.db
+python script/build_periode_tables.py    --db data-full/kalimantan.db
 ```
-→ `data-full/kalimantan.db` ikut dua langkah analisis yang sama. Lapisan
-sawit/klasifikasi memang tidak dibangun di sana (hanya untuk set 825 minerba)
-— skrip **terdegradasi anggun**: kolom terkait NULL & tabel opsional dilewati.
-Tanpa langkah ini, tabel laju/backtrack di data-full membeku pada nilai build
-lama dan ikut ter-commit sebagai angka basi.
+→ `data-full/kalimantan.db` ikut **empat** langkah analisis yang sama. Lapisan
+sawit memang tidak dibangun di sana (hanya untuk set 825 minerba) — skrip
+**terdegradasi anggun**: kolom terkait NULL & tabel opsional dilewati.
+Klasifikasi + atribusi izin **wajib** ikut: tanpa keduanya, tabel `backtrack_*`
+di data-full hanya punya aturan CITRA — INDIKASI/POLOS butuh baris
+`atribusi_izin_aktif`. Keduanya tak butuh Descals, jadi aman dijalankan di
+data-full. Tanpa langkah ini, tabel laju/backtrack di data-full membeku pada
+nilai build lama dan ikut ter-commit sebagai angka basi.
 
 ### B4 — Sajikan (langkah 15–17)
 
@@ -422,7 +475,7 @@ antimoni, intan). Sisanya (pasir/batu/tanah/kuarsa) hanya ada di versi lengkap.
 | `wiup_temporal` | laju pra/pasca tahun izin + verdict (`rate_2001_sampai_tahun_izin_ha_per_year`, `rate_tahun_izin_sampai_2025_ha_per_year`, …) |
 | `wiup_match` | pencocokan ke MinerbaOne |
 | `badan_usaha` / `perizinan` | 7.572 perusahaan / 8.461 izin |
-| `kepadatan_penduduk` | 56 kab/kota, BPS 2015–2024 |
+| `kepadatan_penduduk` | **bentuk long** (Fase G): 1 baris per (`kode_kabkot`, `tahun`) — 56 kab/kota × 10 tahun = **560 baris**, kolom `tahun` + `kepadatan`. Dulu kolom lebar `d2015`…`d2024` (56 baris). Berkas sumber `data/kepadatan_penduduk.csv` **tetap** bentuk lebar; unpivot terjadi saat ingest di `build_combined_db.py` |
 | view `wiup_master` | gabungan semua (dibaca API/web) |
 
 **Tabel lapisan pemeriksa** (langkah 10–12; cangkang `atribusi_sawit` &
@@ -436,25 +489,25 @@ walau lapisan belum diisi):
 | `atribusi_sawit` | per konsesi (825): pecahan loss beririsan tahun-tanam sawit Descals — 3 varian jendela toleransi window 2001–2021 (`loss_sawit_tol2th_2001_2021_ha` dkk.), jendela Minerba (`loss_2009_2021_ha`, `loss_sawit_2009_2021_ha`), sisa tak-terperiksa `loss_2022_2025_ha`, + 3 kolom silang sawit × pra/pasca-tahun-izin |
 | `atribusi_sawit_yearly` | pecahan `atribusi_sawit` per (kode_wiup, tahun) — berhenti persis 2021; dasar basis "bersih" & varian `periode_*_bersih` |
 | `klasifikasi_izin` | per konsesi: vonis IZIN_PERTAMA / PERPANJANGAN / TAK_DINILAI + kekuatan bukti (KUAT/INDIKASI) |
-| `atribusi_izin_aktif` | per konsesi (825): tahun `mulai` per aturan (`mulai_b` → INDIKASI, `mulai_c` arsip, `mulai_d` → POLOS) + loss jendelanya |
-| `atribusi_izin_aktif_ringkas` | Σ loss per aturan X0/B/C/D; pct terhadap hutan-2009 |
+| `atribusi_izin_aktif` | **bentuk unpivot** (Fase G): 1 baris per (konsesi, aturan) — 825 × 3 = **2.475 baris**; kolom `aturan` ∈ TANPA_ATRIBUSI/INDIKASI/POLOS, `mulai`, `loss_mulai_sampai_2025_ha`. Konsesi tanpa jangkar (7): `mulai` & loss **NULL** (bukan 0) |
+| `atribusi_izin_aktif_ringkas` | 3 baris — Σ loss per aturan TANPA_ATRIBUSI/INDIKASI/POLOS + pct terhadap hutan-2009 (1.228.077 / 1.038.362 / 589.487 ha = 34,42% / 29,10% / 16,52%) |
 
 **Tabel laju & backtrack** (langkah 13; jantung kerangka 3 metode):
 
 | Tabel | Isi |
 |---|---|
-| `laju_izin_konsesi` | per konsesi (825): `mulai` versi CITRA, `dasar_mulai` (BUKTI/IZIN), `tahun_bukti`, hutan saat mulai, laju ha/thn & %/thn dua basis (kotor ≤2025, bersih tanpa-sawit ≤2021) |
-| `laju_izin_ringkas` | distribusi laju (median/mean/persentil) per basis × dimensi (semua/kelas/periode) × kelompok |
-| `laju_izin_eventstudy` | loss per tahun-relatif-SK (rel_year −10…+16) per kelas izin; t=0 PERPANJANGAN = SK perpanjangan (sisi pra tercemar — kurva bersih-tafsir = IZIN_PERTAMA) |
-| `konsesi_aktif_tahunan` | deret n konsesi mulai-aktif vs n SK terbit per tahun (+ n aktif-sebelum-SK) |
+| `laju_izin_konsesi` | per konsesi (825): `mulai` versi Deteksi Hansen (`CITRA`), `dasar_mulai` (BUKTI/IZIN), `tahun_bukti`, hutan saat mulai, laju ha/thn & %/thn dua basis (kotor ≤2025, bersih tanpa-sawit ≤2021) |
+| **view** `laju_izin_ringkas` | **VIEW** (Fase G) = `backtrack_laju_ringkas` WHERE `aturan='CITRA'` — distribusi laju (median/mean/persentil) per basis × dimensi (semua/kelas/periode) × kelompok |
+| `laju_izin_eventstudy` | loss per tahun-relatif-SK (rel_year −10…+16) per kelas izin; t=0 PERPANJANGAN = SK perpanjangan (sisi pra tercemar — kurva bersih-tafsir = IZIN_PERTAMA). Status **ARSIP** di `analysis_meta` |
+| **view** `konsesi_aktif_tahunan` | **VIEW** (Fase G) = `backtrack_tahunan` WHERE `aturan='CITRA'` — deret n konsesi mulai-aktif vs n SK terbit per tahun (+ n aktif-sebelum-SK) |
 | `backtrack_tahunan` | deret tahunan per **aturan** (CITRA/INDIKASI/POLOS): n aktif, loss, loss tanpa-sawit, hutan awal tahun |
-| `backtrack_periode` | Σ loss `[mulai, 2025]` per aturan × periode **kohort SK** (pembanding) |
+| `backtrack_kohort` | *(eks `backtrack_periode`)* Σ loss `[mulai, 2025]` per aturan × **kohort SK** — kolom kuncinya kini bernama `kohort` (Pra-2009/P1/P2/P3/TANPA_PERIODE), bukan `periode`, supaya tak tertukar dengan jendela kalender |
 | `backtrack_periode_kalender` | **kerangka utama**: loss per aturan × **jendela kalender** P1 2009–2014 / P2 2015–2019 / P3 2020–2025 + `loss_tanpa_sawit_sampai_2021_ha`, `loss_2022_2025_belum_terperiksa_ha` (P3), n & luas & gini konsesi aktif |
 | `backtrack_komoditas` | sel periode × {BATUBARA, MINERAL LOGAM} per aturan |
 | `backtrack_klasifikasi` | sel periode × kelas izin per aturan |
-| `backtrack_stok` | stok izin-aktif per aturan: n, luas, hutan, loss flow & kumulatif sejak 2009 |
+| `backtrack_stok` | stok izin-aktif per aturan: n, luas, hutan, loss flow & kumulatif sejak 2009. Kolom `grup_tipe` ∈ `kohort` (eks nilai `'periode'`, diganti Fase G) / `penerbit` |
 | `backtrack_sawit` | pangsa sawit per aturan × periode; penyebut = loss `[mulai, 2021]` (batas Descals) |
-| `backtrack_laju_ringkas` | distribusi laju ha/thn & %/thn per aturan × basis × dimensi — sumber angka rekonsiliasi 3 metode (CITRA 1.227.970 / INDIKASI 1.038.362 / POLOS 589.487 ha) |
+| `backtrack_laju_ringkas` | distribusi laju ha/thn & %/thn per aturan × basis × dimensi — sumber angka rekonsiliasi 3 metode (Deteksi Hansen/CITRA 1.227.970 ha, n=825 · INDIKASI 1.038.362 ha, n=818 · POLOS 589.487 ha, n=814) |
 | `backtrack_distribusi` | polarisasi ukuran per aturan: mean/median/**Gini** (rumus selisih-berpasangan) untuk metrik luas_sk & ditambang (± tanpa-sawit) |
 | `backtrack_signifikansi` | Kruskal–Wallis + Mann–Whitney (Holm) antar P1/P2/P3 per aturan (kosong bila scipy absen) |
 
@@ -464,20 +517,31 @@ ulang kapan pun):
 | Tabel | Isi |
 |---|---|
 | `periode_ringkasan` (+`_bersih`) | ringkasan per periode kohort SK: n, luas, loss, %poligon, %akselerasi, korelasi (varian bersih: loss 2001–2021 tanpa sawit) |
-| `periode_tahunan_aktif` (+`_bersih`) | deret stok izin-aktif per periode-tahun (varian bersih berhenti 2021) |
-| `penerbit_tahunan_aktif` | idem per PENERBIT (Bupati/Gubernur/Menteri; termasuk pra-2009) |
+| `periode_tahunan_aktif` (+`_bersih`) | deret stok izin-aktif per periode-tahun (varian bersih berhenti 2021). Tetap **tabel** (bukan view), ditandai **PROYEKSI** di `analysis_meta`; varian `_bersih` **ARSIP** |
+| `penerbit_tahunan_aktif` | idem per PENERBIT (Bupati/Gubernur/Menteri; termasuk pra-2009). Ditandai **PROYEKSI** |
 | `periode_slope` | slope OLS loss~tahun per periode berbasis izin-aktif (since-permit) + tahun puncak |
 | `periode_komoditas` (+`_bersih`) | metrik per periode × grup (batubara vs mineral logam) |
 | `periode_sawit` | Σ kolom `atribusi_sawit` per periode (pangsa sawit per periode, window 2001–2021) |
 | `periode_klasifikasi` + `periode_klasifikasi_uji` | sebaran kelas izin per periode + uji Fisher exact antar periode |
 | `periode_signifikansi` (+`_bersih`) | Kruskal–Wallis + Mann–Whitney (Holm) antar P1/P2/P3 |
 | `baseline_tahunan` | deret loss seluruh konsesi 2001–2025 tanpa filter jendela izin (konteks) |
-| `analysis_meta` | **provenance** semua tabel turunan (sumber, metode, skrip) |
+| `analysis_meta` | **provenance** semua tabel turunan (sumber, metode, skrip) + kolom **`status`** ∈ AKTIF (31) / ARSIP (10) / PROYEKSI (2) |
 | `column_meta` | **kamus kolom dua arah**: arti + rumus + sumber tiap kolom semua tabel/view — diverifikasi 100% terhadap `PRAGMA table_info` oleh `verify_invariants.py` |
+
+> **Mana yang masih menopang kesimpulan?** Lihat kolom `status` di
+> `analysis_meta` — jangan menebak dari nama tabel. Yang ber-status **ARSIP**
+> (10, tetap dibangun tapi tak dipakai menyimpulkan): `laju_izin_eventstudy`,
+> `periode_ringkasan_bersih`, `periode_tahunan_aktif_bersih`,
+> `periode_komoditas`, `periode_komoditas_bersih`, `periode_sawit`,
+> `periode_klasifikasi`, `periode_klasifikasi_uji`, `periode_signifikansi`,
+> `periode_signifikansi_bersih`. Yang **PROYEKSI** (2):
+> `periode_tahunan_aktif`, `penerbit_tahunan_aktif`. Sisanya (31) **AKTIF**.
 
 Asal-usul tiap tabel analisis dapat dilacak langsung:
 ```bash
-sqlite3 data/kalimantan.db "SELECT nama_tabel, sumber, metode FROM analysis_meta"
+sqlite3 data/kalimantan.db "SELECT nama_tabel, status, sumber, metode FROM analysis_meta"
+# hanya yang menopang kesimpulan:
+sqlite3 data/kalimantan.db "SELECT nama_tabel FROM analysis_meta WHERE status='AKTIF'"
 ```
 
 ---

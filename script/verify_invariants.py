@@ -414,53 +414,78 @@ def cek_klasifikasi_silang(con, lap):
 
 
 def cek_atribusi(con, lap):
-    """Invarian atribusi izin aktif: monotonik D≤C≤B≤X0, rekonsiliasi 3 arah,
-    identitas hutan-2009, kohort. Tabel opsional — absen = lewati (data-full)."""
+    """Invarian atribusi izin aktif (bentuk BARIS per (konsesi, aturan) —
+    unpivot Fase G 15 Agu): monotonik POLOS≤INDIKASI≤TANPA_ATRIBUSI,
+    rekonsiliasi ringkas vs per-konsesi, identitas hutan-2009, kohort.
+    Tabel opsional — absen = lewati (data-full)."""
     def tabel_ada(nama):
         return satu(con, "SELECT COUNT(*) FROM sqlite_master "
                          "WHERE type='table' AND name=?", (nama,)) > 0
     if not tabel_ada("atribusi_izin_aktif"):
         lap.warn("atribusi-izin", "atribusi_izin_aktif absen — dilewati")
         return
-    buruk = satu(con, """SELECT COUNT(*) FROM atribusi_izin_aktif
-        WHERE loss_mulai_d_sampai_2025_ha > loss_mulai_c_sampai_2025_ha + 0.011
-           OR loss_mulai_c_sampai_2025_ha > loss_mulai_b_sampai_2025_ha + 0.011
-           OR loss_mulai_b_sampai_2025_ha > loss_2009_2025_ha + 0.011""")
-    if buruk:
-        lap.fail("atribusi-monotonik", f"{buruk} konsesi melanggar D≤C≤B≤X0")
+    # Domain aturan terkunci (kosakata backtrack + TANPA_ATRIBUSI; C diarsipkan).
+    aneh = satu(con, """SELECT COUNT(*) FROM atribusi_izin_aktif
+        WHERE aturan NOT IN ('TANPA_ATRIBUSI','INDIKASI','POLOS')""")
+    if aneh:
+        lap.fail("atribusi-domain-aturan", f"{aneh} baris beraturan di luar domain")
     else:
-        lap.ok("atribusi-monotonik", "D ≤ C ≤ B ≤ X0 utk semua konsesi")
+        lap.ok("atribusi-domain-aturan",
+               "aturan ∈ {TANPA_ATRIBUSI, INDIKASI, POLOS} (C diarsipkan 15 Agu)")
+    buruk = satu(con, """SELECT COUNT(*) FROM atribusi_izin_aktif t
+        JOIN atribusi_izin_aktif i ON i.kode_wiup=t.kode_wiup AND i.aturan='INDIKASI'
+        JOIN atribusi_izin_aktif p ON p.kode_wiup=t.kode_wiup AND p.aturan='POLOS'
+        WHERE t.aturan='TANPA_ATRIBUSI' AND (
+              (p.loss_mulai_sampai_2025_ha IS NOT NULL AND i.loss_mulai_sampai_2025_ha IS NOT NULL
+               AND p.loss_mulai_sampai_2025_ha > i.loss_mulai_sampai_2025_ha + 0.011)
+           OR (i.loss_mulai_sampai_2025_ha IS NOT NULL
+               AND i.loss_mulai_sampai_2025_ha > t.loss_mulai_sampai_2025_ha + 0.011))""")
+    if buruk:
+        lap.fail("atribusi-monotonik",
+                 f"{buruk} konsesi melanggar POLOS ≤ INDIKASI ≤ TANPA_ATRIBUSI")
+    else:
+        lap.ok("atribusi-monotonik", "POLOS ≤ INDIKASI ≤ TANPA_ATRIBUSI utk semua konsesi")
     x0 = satu(con, "SELECT loss_mulai_aturan_sampai_2025_ha "
-                   "FROM atribusi_izin_aktif_ringkas WHERE aturan='X0'")
+                   "FROM atribusi_izin_aktif_ringkas WHERE aturan='TANPA_ATRIBUSI'")
     sumber = satu(con, "SELECT SUM(loss_ha) FROM wiup_loss_yearly "
                        "WHERE year BETWEEN 2009 AND 2025")
     if abs((x0 or 0) - (sumber or 0)) > 0.02:
-        lap.fail("atribusi-x0-sumber", f"ringkas X0 {x0} ≠ Σ sumber {sumber}")
+        lap.fail("atribusi-x0-sumber", f"ringkas TANPA_ATRIBUSI {x0} ≠ Σ sumber {sumber}")
     else:
-        lap.ok("atribusi-x0-sumber", f"X0 = Σ wiup_loss_yearly 2009-2025 ({x0:,.2f} ha)")
+        lap.ok("atribusi-x0-sumber",
+               f"TANPA_ATRIBUSI = Σ wiup_loss_yearly 2009-2025 ({x0:,.2f} ha)")
     beda = []
-    for aturan, kolom in (("X0", "loss_2009_2025_ha"), ("B", "loss_mulai_b_sampai_2025_ha"),
-                          ("C", "loss_mulai_c_sampai_2025_ha"), ("D", "loss_mulai_d_sampai_2025_ha")):
+    for aturan in ("TANPA_ATRIBUSI", "INDIKASI", "POLOS"):
         r = satu(con, "SELECT loss_mulai_aturan_sampai_2025_ha "
                       "FROM atribusi_izin_aktif_ringkas WHERE aturan=?", (aturan,))
-        per = satu(con, f"SELECT SUM({kolom}) FROM atribusi_izin_aktif")
+        per = satu(con, "SELECT SUM(loss_mulai_sampai_2025_ha) FROM atribusi_izin_aktif "
+                        "WHERE aturan=?", (aturan,))
         if abs((r or 0) - (per or 0)) > 0.5:
             beda.append(f"{aturan}: ringkas {r} / per-konsesi {per}")
     if beda:
         lap.fail("atribusi-rekonsiliasi", "; ".join(beda))
     else:
-        lap.ok("atribusi-rekonsiliasi", "ringkas = Σ per-konsesi (4 aturan; tabel _tahunan/_kelas dihapus cleanup r3)")
-    n_b = satu(con, "SELECT n_kohort FROM atribusi_izin_aktif_ringkas WHERE aturan='B'")
-    n_hitung = satu(con, "SELECT COUNT(*) FROM atribusi_izin_aktif WHERE mulai_b IS NOT NULL")
+        lap.ok("atribusi-rekonsiliasi", "ringkas = Σ per-konsesi (3 aturan; unpivot Fase G)")
+    n_b = satu(con, "SELECT n_kohort FROM atribusi_izin_aktif_ringkas WHERE aturan='INDIKASI'")
+    n_hitung = satu(con, "SELECT COUNT(*) FROM atribusi_izin_aktif "
+                         "WHERE aturan='INDIKASI' AND mulai IS NOT NULL")
     if n_b != n_hitung:
-        lap.fail("atribusi-kohort", f"n_kohort B {n_b} ≠ hitung ulang {n_hitung}")
+        lap.fail("atribusi-kohort", f"n_kohort INDIKASI {n_b} ≠ hitung ulang {n_hitung}")
     else:
-        lap.ok("atribusi-kohort", f"kohort B = {n_b} konsesi (mulai_b NOT NULL)")
+        lap.ok("atribusi-kohort", f"kohort INDIKASI = {n_b} konsesi (mulai NOT NULL)")
+    # mulai NULL ⇔ loss NULL (keluar kohort = tak terdefinisi, bukan 0).
+    n_null = satu(con, """SELECT COUNT(*) FROM atribusi_izin_aktif
+        WHERE (mulai IS NULL) != (loss_mulai_sampai_2025_ha IS NULL)""")
+    if n_null:
+        lap.fail("atribusi-null-berpasangan", f"{n_null} baris mulai/loss NULL tak berpasangan")
+    else:
+        lap.ok("atribusi-null-berpasangan", "mulai NULL ⇔ loss NULL di semua baris")
     # Identitas penyebut: pct tersimpan harus cocok dgn hitung ulang dari sumber
     # (hutan-2009 = Σforest_2000 − Σloss 2001-2008) — bukan angka lepas.
-    pct_b = satu(con, "SELECT pct_hutan2009 FROM atribusi_izin_aktif_ringkas WHERE aturan='B'")
+    pct_b = satu(con, "SELECT pct_hutan2009 FROM atribusi_izin_aktif_ringkas "
+                      "WHERE aturan='INDIKASI'")
     loss_b = satu(con, "SELECT loss_mulai_aturan_sampai_2025_ha "
-                      "FROM atribusi_izin_aktif_ringkas WHERE aturan='B'")
+                      "FROM atribusi_izin_aktif_ringkas WHERE aturan='INDIKASI'")
     h2009 = (satu(con, "SELECT COALESCE(SUM(forest_2000_ha),0) FROM wiup_loss")
              - satu(con, "SELECT COALESCE(SUM(loss_ha),0) FROM wiup_loss_yearly "
                          "WHERE year BETWEEN 2001 AND 2008"))
@@ -468,10 +493,10 @@ def cek_atribusi(con, lap):
         lap.warn("atribusi-hutan2009", "pct NULL atau penyebut ≤ 0 — periksa sumber")
     elif abs(pct_b - 100.0 * loss_b / h2009) > 0.02:
         lap.fail("atribusi-hutan2009",
-                 f"pct B tersimpan {pct_b} ≠ hitung ulang {100.0 * loss_b / h2009:.2f}")
+                 f"pct INDIKASI tersimpan {pct_b} ≠ hitung ulang {100.0 * loss_b / h2009:.2f}")
     else:
         lap.ok("atribusi-hutan2009",
-               f"pct B = 100·loss/hutan2009 (hutan2009 = {h2009:,.2f} ha, identitas eksak)")
+               f"pct INDIKASI = 100·loss/hutan2009 (hutan2009 = {h2009:,.2f} ha, identitas eksak)")
 
 
 def cek_laju(con, lap):
@@ -493,9 +518,9 @@ def cek_laju(con, lap):
         lap.fail("laju-rekonsiliasi", f"Σ loss_kotor {tot_k:,.2f} ≠ hitung ulang {ulang:,.2f}")
     else:
         lap.ok("laju-rekonsiliasi", f"Σ loss_kotor = hitung ulang dari sumber ({tot_k:,.2f} ha)")
-    # E tak boleh melebihi X0 (semua loss era Minerba tanpa atribusi).
+    # E tak boleh melebihi TANPA_ATRIBUSI (semua loss era Minerba tanpa atribusi).
     x0 = (satu(con, "SELECT loss_mulai_aturan_sampai_2025_ha "
-                    "FROM atribusi_izin_aktif_ringkas WHERE aturan='X0'")
+                    "FROM atribusi_izin_aktif_ringkas WHERE aturan='TANPA_ATRIBUSI'")
           if tabel_ada(con, "atribusi_izin_aktif_ringkas") else None)
     if x0 is not None and tot_k > x0 + 0.5:
         lap.fail("laju-batas-x0", f"Σ loss_kotor E {tot_k:,.2f} > X0 {x0:,.2f}")
@@ -624,13 +649,13 @@ def cek_backtrack(con, lap):
     backtrack_* adalah PEMBANDING; kalau jalur CITRA-nya menyimpang dari
     laju_izin_konsesi / konsesi_aktif_tahunan, ada dua sumber kebenaran.
     """
-    ada = con.execute("SELECT 1 FROM sqlite_master WHERE name='backtrack_periode'").fetchone()
+    ada = con.execute("SELECT 1 FROM sqlite_master WHERE name='backtrack_kohort'").fetchone()
     if not ada:
         lap.ok("backtrack-absen", "tabel backtrack_* tak ada (lewati)")
         return
     # 1) Σ loss CITRA SELURUH ember (termasuk TANPA_PERIODE — audit 15 Agu:
     #    dulu 11 konsesi/4.165 ha bocor tanpa jejak) == Σ kohort penuh.
-    a = satu(con, "SELECT ROUND(SUM(loss_mulai_aktif_sampai_2025_ha),1) FROM backtrack_periode "
+    a = satu(con, "SELECT ROUND(SUM(loss_mulai_aktif_sampai_2025_ha),1) FROM backtrack_kohort "
                   "WHERE aturan='CITRA'")
     b = satu(con, "SELECT ROUND(SUM(loss_mulai_aktif_sampai_2025_ha),1) FROM laju_izin_konsesi "
                   "WHERE mulai IS NOT NULL")
@@ -649,30 +674,30 @@ def cek_backtrack(con, lap):
         lap.fail("backtrack-citra-tahunan", f"{n_bad} tahun CITRA ≠ konsesi_aktif_tahunan")
     else:
         lap.ok("backtrack-citra-tahunan", "deret CITRA = konsesi_aktif_tahunan (semua tahun)")
-    # 3) INDIKASI/PERKIRAAN tak boleh MELEBIHI CITRA di total loss (jendela mulai
-    #    citra selalu <= jendela dokumen utk konsesi yang sama... TIDAK selalu —
-    #    mulai_c bisa < mulai citra (taksiran izin asal pra-bukti). Jadi cek
-    #    longgar: total tiap aturan <= X0 (batas fisik semua loss 2009-2025).
-    # POLOS (tanpa backtrack) harus ≈ aturan D lama (selisih pembulatan; tol 5 ha).
+    # 3) Cek longgar: total tiap aturan <= TANPA_ATRIBUSI (batas fisik semua
+    #    loss 2009-2025) — INDIKASI bisa < atau > jendela CITRA per konsesi,
+    #    jadi tak ada urutan ketat antar metode selain plafon fisik ini.
+    # POLOS backtrack_* harus ≈ POLOS atribusi (selisih pembulatan; tol 5 ha).
     if not tabel_ada(con, "atribusi_izin_aktif_ringkas"):
         lap.ok("backtrack-polos-vs-d", "atribusi_izin_aktif_ringkas absen (DB varian) — lewati")
         d_lama = None
     else:
         d_lama = satu(con, "SELECT loss_mulai_aturan_sampai_2025_ha "
-                           "FROM atribusi_izin_aktif_ringkas WHERE aturan='D'")
-    d_baru = satu(con, "SELECT SUM(loss_mulai_aktif_sampai_2025_ha) FROM backtrack_periode "
+                           "FROM atribusi_izin_aktif_ringkas WHERE aturan='POLOS'")
+    d_baru = satu(con, "SELECT SUM(loss_mulai_aktif_sampai_2025_ha) FROM backtrack_kohort "
                        "WHERE aturan='POLOS'")
     if d_lama is not None and d_baru is not None:
         if abs(d_lama - d_baru) > 5:
-            lap.fail("backtrack-polos-vs-d", f"POLOS {d_baru:,.0f} ≠ aturan D {d_lama:,.0f}")
+            lap.fail("backtrack-polos-vs-d",
+                     f"backtrack POLOS {d_baru:,.0f} ≠ atribusi POLOS {d_lama:,.0f}")
         else:
-            lap.ok("backtrack-polos-vs-d", f"POLOS = aturan D ({d_baru:,.0f} ha)")
+            lap.ok("backtrack-polos-vs-d", f"backtrack POLOS = atribusi POLOS ({d_baru:,.0f} ha)")
     x0 = (satu(con, "SELECT loss_mulai_aturan_sampai_2025_ha "
-                    "FROM atribusi_izin_aktif_ringkas WHERE aturan='X0'")
+                    "FROM atribusi_izin_aktif_ringkas WHERE aturan='TANPA_ATRIBUSI'")
           if tabel_ada(con, "atribusi_izin_aktif_ringkas") else None)
     if x0 is not None:
         n_lebih = satu(con, """SELECT COUNT(*) FROM (
-            SELECT aturan, SUM(loss_mulai_aktif_sampai_2025_ha) s FROM backtrack_periode
+            SELECT aturan, SUM(loss_mulai_aktif_sampai_2025_ha) s FROM backtrack_kohort
             GROUP BY aturan HAVING s > ? + 0.5)""", (x0,))
         if n_lebih:
             lap.fail("backtrack-batas-x0", f"{n_lebih} aturan melebihi X0 {x0:,.0f} ha")

@@ -33,9 +33,10 @@ Tiga metrik (keputusan user 12 Agu 2026):
                         Event-study TETAP berjam iup_year (mengukur efek SK),
                         terpisah dari jam bukti di tabel laju.
 
-Tabel: laju_izin_konsesi (825, kohort = mulai NOT NULL), laju_izin_ringkas
-(distribusi basis × dimensi × kelompok), laju_izin_eventstudy (kelas × rel_year,
-kohort iup_year 2009-2025). Kolom jendela era Minerba (loss_2009_2025_ha dst)
+Tabel: laju_izin_konsesi (825, kohort = mulai NOT NULL), laju_izin_eventstudy
+(kelas × rel_year, kohort iup_year 2009-2025), 10 tabel backtrack_* + dua VIEW
+kompatibilitas (Fase G 15 Agu): laju_izin_ringkas = backtrack_laju_ringkas
+baris CITRA, konsesi_aktif_tahunan = backtrack_tahunan baris CITRA. Kolom jendela era Minerba (loss_2009_2025_ha dst)
 kini hidup di wiup_loss (dihitung ingest build_combined_db) — tabel
 jendela_2009 lama di-drop di sini bila masih ada. Provenance/kamus kolom ditulis build_periode_tables.py
 (jalan SETELAH skrip ini di process.sh). Idempotent, stdlib saja.
@@ -139,9 +140,15 @@ def build_backtrack_tables(con, rows, loss_th, sawit_th, f2000, ada_sawit):
     """Tabel pembanding 3 metode backtrack — kunci kolom `aturan`.
 
     aturan ∈ {'CITRA','INDIKASI','POLOS'}; tahun mulai per konsesi:
-      CITRA     = laju_izin_konsesi.mulai        (aturan E — bukti citra; UTAMA)
-      INDIKASI  = atribusi_izin_aktif.mulai_b    (perpanjangan→2009, lain→max(2009,iup))
-      POLOS     = atribusi_izin_aktif.mulai_d    (tanpa backtrack — max(2009, tahun SK))
+      CITRA     = laju_izin_konsesi.mulai        (aturan E; UTAMA). 'CITRA' =
+                  CODENAME internal; label UI & tesis = "Deteksi Hansen" —
+                  buktinya dibaca dari produk Hansen GFC (tree loss non-sawit
+                  ≥ 1 ha), bukan dari interpretasi citra satelit sendiri
+                  (keputusan igoen 15 Agu; kode DB sengaja tak di-rename).
+      INDIKASI  = atribusi_izin_aktif.mulai baris aturan='INDIKASI'
+                  (perpanjangan→2009, lain→max(2009,iup))
+      POLOS     = atribusi_izin_aktif.mulai baris aturan='POLOS'
+                  (tanpa backtrack — max(2009, tahun SK))
     Jendela hitung SEMUA metode: [mulai, 2025] (tanpa-sawit: [mulai, 2021]).
     Kolom bernama `..._mulai_aktif_...` merujuk tahun mulai aktif VERSI `aturan`
     di baris yang sama — penanda jangkarnya ya kolom aturan itu (konvensi
@@ -178,21 +185,21 @@ def build_backtrack_tables(con, rows, loss_th, sawit_th, f2000, ada_sawit):
     ada_atr = con.execute("SELECT 1 FROM sqlite_master WHERE type='table' "
                           "AND name='atribusi_izin_aktif'").fetchone() is not None
     if ada_atr:
-        b, d = {}, {}
-        for kode, mb, md in con.execute(
-                "SELECT kode_wiup, mulai_b, mulai_d FROM atribusi_izin_aktif"):
-            b[kode] = mb
-            d[kode] = md
-        mulai_of["INDIKASI"] = b
-        # PERKIRAAN (aturan C) PENSIUN dari backtrack_* (igoen 15 Agu): dgn cara
-        # baca aditif yang benar (perpanjangan MENAMBAH waktu setelah izin asal
+        # atribusi_izin_aktif kini bentuk BARIS (unpivot Fase G 15 Agu): satu
+        # baris per (kode_wiup, aturan) — anchor dibaca per nilai aturan, bukan
+        # lagi kolom mulai_b/mulai_d.
+        # PERKIRAAN (aturan C) PENSIUN total (igoen 15 Agu): dgn cara baca
+        # aditif yang benar (perpanjangan MENAMBAH waktu setelah izin asal
         # habis), taksiran izin asal = iup_year − 20 selalu < 2009 → terklem →
-        # C ≡ B utk seluruh 525 perpanjangan. Rumus jangkar-akhir lama
-        # (iup+durasi−20) memakai asumsi kontinuitas-horizon yang ditolak.
-        # Data aturan C (mulai_c/loss_mulai_c_sampai_2025_ha) TETAP di atribusi_izin_aktif sbg
-        # arsip — tak dibaca di sini.
-        # POLOS = tanpa backtrack apa pun: murni max(2009, tahun SK) — aturan D.
-        mulai_of["POLOS"] = d
+        # C ≡ INDIKASI utk seluruh 525 perpanjangan. Data C lama bisa diambil
+        # dari riwayat git (DECISIONS 15 Agu 2026).
+        mulai_of["INDIKASI"] = dict(con.execute(
+            "SELECT kode_wiup, mulai FROM atribusi_izin_aktif "
+            "WHERE aturan='INDIKASI'"))
+        # POLOS = tanpa backtrack apa pun: murni max(2009, tahun SK).
+        mulai_of["POLOS"] = dict(con.execute(
+            "SELECT kode_wiup, mulai FROM atribusi_izin_aktif "
+            "WHERE aturan='POLOS'"))
     else:
         print("PERINGATAN: atribusi_izin_aktif absen — backtrack_* hanya baris CITRA.")
 
@@ -258,7 +265,7 @@ def build_backtrack_tables(con, rows, loss_th, sawit_th, f2000, ada_sawit):
     # backtrack_tahunan tahun-tahun itu dari konsesi yang AKTIF versi `aturan`
     # — dengan begitu klaim "kehilangan PADA rentang ini" lurus, dan batas
     # Descals (2021) memang hanya menggigit P3 (kolom loss_2022_2025_belum_terperiksa_ha).
-    # Kohort-SK TIDAK dibuang: tetap hidup di backtrack_periode dkk. dan tampil
+    # Kohort-SK TIDAK dibuang: tetap hidup di backtrack_kohort dkk. dan tampil
     # di UI sebagai seksi terpisah "SK yang terbit pada rentang ini".
     # Dihitung QUERY-BALIK atas baris backtrack_tahunan yang BARU ditulis di
     # atas (bukan hitung ulang dari loss_th) supaya rekonsiliasi jendela-vs-
@@ -334,27 +341,33 @@ def build_backtrack_tables(con, rows, loss_th, sawit_th, f2000, ada_sawit):
                  None if med_luas is None else round(med_luas, 2),
                  gini(luas_aktif)))
 
-    # ── backtrack_periode / _komoditas / _klasifikasi: agregat per sel ────────
+    # ── backtrack_kohort / _komoditas / _klasifikasi: agregat per sel ─────────
+    # RENAME Fase G (15 Agu): tabel backtrack_periode → backtrack_kohort dan
+    # kolom `periode` → `kohort` (juga di _komoditas/_klasifikasi/_sawit) —
+    # nilainya KOHORT tahun-terbit-SK (to_periode(iup_year)), yang sejak
+    # redefinisi 15 Agu bertabrakan makna dgn backtrack_periode_kalender
+    # (periode = jendela tahun kalender murni). Satu kata satu makna.
     # Penanda jangkar 'mulai_aktif' (rename 15 Agu, konvensi DECISIONS 13 Agu):
     # 'mulai' telanjang ambigu — mulai apa? Penanda mulai_aktif menunjuk tahun
     # mulai AKTIF versi kolom `aturan` di baris yang sama (CITRA/INDIKASI/POLOS).
-    con.execute("DROP TABLE IF EXISTS backtrack_periode")
-    con.execute("""CREATE TABLE backtrack_periode (
-        aturan TEXT, periode TEXT, n INTEGER, n_mulai INTEGER,
+    con.execute("DROP TABLE IF EXISTS backtrack_periode")  # nama lama (pra-Fase G)
+    con.execute("DROP TABLE IF EXISTS backtrack_kohort")
+    con.execute("""CREATE TABLE backtrack_kohort (
+        aturan TEXT, kohort TEXT, n INTEGER, n_mulai INTEGER,
         loss_mulai_aktif_sampai_2025_ha REAL, loss_mulai_aktif_sampai_2021_ha REAL,
         loss_mulai_aktif_sampai_2021_tanpa_sawit_ha REAL,
         polygon_ha REAL, pct_poligon_mulai_aktif_sampai_2025 REAL, r_luas_loss REAL,
-        PRIMARY KEY (aturan, periode))""")
+        PRIMARY KEY (aturan, kohort))""")
     con.execute("DROP TABLE IF EXISTS backtrack_komoditas")
     con.execute("""CREATE TABLE backtrack_komoditas (
-        aturan TEXT, periode TEXT, grup_komoditas TEXT, n INTEGER,
+        aturan TEXT, kohort TEXT, grup_komoditas TEXT, n INTEGER,
         loss_mulai_aktif_sampai_2025_ha REAL, loss_mulai_aktif_sampai_2021_tanpa_sawit_ha REAL,
-        PRIMARY KEY (aturan, periode, grup_komoditas))""")
+        PRIMARY KEY (aturan, kohort, grup_komoditas))""")
     con.execute("DROP TABLE IF EXISTS backtrack_klasifikasi")
     con.execute("""CREATE TABLE backtrack_klasifikasi (
-        aturan TEXT, periode TEXT, kelas TEXT, n INTEGER,
+        aturan TEXT, kohort TEXT, kelas TEXT, n INTEGER,
         loss_mulai_aktif_sampai_2025_ha REAL,
-        PRIMARY KEY (aturan, periode, kelas))""")
+        PRIMARY KEY (aturan, kohort, kelas))""")
 
     def pearson(xs, ys):
         n = len(xs)
@@ -369,7 +382,7 @@ def build_backtrack_tables(con, rows, loss_th, sawit_th, f2000, ada_sawit):
         return sxy / (sxx * syy) ** 0.5
 
     # Ember TANPA_PERIODE (temuan audit 15 Agu): 11 konsesi kohort (7 tanpa
-    # iup_year, 4 iup_year=2026) dulu DIBUANG diam-diam → Σ backtrack_periode
+    # iup_year, 4 iup_year=2026) dulu DIBUANG diam-diam → Σ backtrack_kohort
     # kurang 4.165 ha dari laju_izin_ringkas di halaman yang sama. Kini masuk
     # ember sendiri: jumlah rekonsil, UI tinggal tak merender ember ini.
     PERIODES = ("Pra-2009", "P1", "P2", "P3", "TANPA_PERIODE")
@@ -380,7 +393,7 @@ def build_backtrack_tables(con, rows, loss_th, sawit_th, f2000, ada_sawit):
             pp = to_periode(iy) or "TANPA_PERIODE"
             per_p[pp].append(kode)
         for pp, anggota in per_p.items():
-            # Filter m <= JENDELA_MAX (audit 3.5): mulai_d bisa 2026 (di luar
+            # Filter m <= JENDELA_MAX (audit 3.5): mulai POLOS bisa 2026 (di luar
             # jendela) — tanpa filter ini ia mencemari r_luas_loss sbg titik 0.
             punya = [k for k in anggota
                      if m_of.get(k) is not None and m_of[k] <= JENDELA_MAX]
@@ -392,7 +405,7 @@ def build_backtrack_tables(con, rows, loss_th, sawit_th, f2000, ada_sawit):
             pg = sum(poly.get(k, 0.0) for k in anggota)
             r = pearson([geo[k][1] for k in punya],
                         [loss_jendela(k, m_of[k], JENDELA_MAX) for k in punya])
-            con.execute("INSERT INTO backtrack_periode VALUES (?,?,?,?,?,?,?,?,?,?)",
+            con.execute("INSERT INTO backtrack_kohort VALUES (?,?,?,?,?,?,?,?,?,?)",
                         (aturan, pp, len(anggota), len(punya), round(l25, 2),
                          round(l21k, 2),
                          None if l21 is None else round(l21, 2), round(pg, 2),
@@ -425,13 +438,16 @@ def build_backtrack_tables(con, rows, loss_th, sawit_th, f2000, ada_sawit):
         n_aktif INTEGER, luas_aktif_ha REAL, forest_aktif_ha REAL,
         loss_ha REAL, loss_kumulatif_sejak_2009_ha REAL,
         PRIMARY KEY (aturan, grup_tipe, grup, year))""")
+    # grup_tipe 'kohort' (eks 'periode', rename Fase G 15 Agu): pengelompokan
+    # menurut KOHORT tahun-terbit-SK (to_periode(iup_year)) — bukan jendela
+    # kalender; nilai diselaraskan dgn nama tabel backtrack_kohort.
     for aturan, m_of in mulai_of.items():
-        for grup_tipe in ("periode", "penerbit"):
+        for grup_tipe in ("kohort", "penerbit"):
             per_g2: dict[str, list] = {}
             for kode in kode_semua:
                 iy, _luas, pejabat, _komo = geo.get(kode, (None, 0, None, None))
                 kunci = ((to_periode(iy) or "TANPA_PERIODE")
-                         if grup_tipe == "periode" else pejabat)
+                         if grup_tipe == "kohort" else pejabat)
                 if kunci is None:
                     continue
                 per_g2.setdefault(kunci, []).append(kode)
@@ -456,11 +472,11 @@ def build_backtrack_tables(con, rows, loss_th, sawit_th, f2000, ada_sawit):
     con.execute("DROP TABLE IF EXISTS backtrack_sawit")
     if ada_sawit:
         con.execute("""CREATE TABLE backtrack_sawit (
-            aturan TEXT, periode TEXT, n INTEGER,
+            aturan TEXT, kohort TEXT, n INTEGER,
             loss_mulai_aktif_sampai_2021_ha REAL, loss_sawit_mulai_aktif_sampai_2021_ha REAL,
             loss_mulai_aktif_sampai_2021_tanpa_sawit_ha REAL,
             persen_sawit_mulai_aktif_sampai_2021 REAL,
-            PRIMARY KEY (aturan, periode))""")
+            PRIMARY KEY (aturan, kohort))""")
         for aturan, m_of in mulai_of.items():
             per_p2: dict[str, list] = {pp: [] for pp in PERIODES}
             for kode in kode_semua:
@@ -478,9 +494,8 @@ def build_backtrack_tables(con, rows, loss_th, sawit_th, f2000, ada_sawit):
                              round(100.0 * sw21 / l21, 2) if l21 else None))
 
     # ── backtrack_laju_ringkas: persentil laju per aturan (blok Kecepatan) ───
-    # Skema = laju_izin_ringkas + kolom aturan. Baris CITRA == laju_izin_ringkas
-    # (invarian tak dipasang di sini krn pembulatan _stat_row sama persis —
-    # keduanya dihitung fungsi yang sama atas mulai yang sama).
+    # Baris CITRA = SUMBER view laju_izin_ringkas (Fase G 15 Agu — dulu tabel
+    # kembar yang dihitung fungsi yang sama; kini satu sumber kebenaran).
     con.execute("DROP TABLE IF EXISTS backtrack_laju_ringkas")
     con.execute("""CREATE TABLE backtrack_laju_ringkas (
         aturan TEXT, basis TEXT, dimensi TEXT, kelompok TEXT, n INTEGER, n_pct INTEGER,
@@ -495,7 +510,7 @@ def build_backtrack_tables(con, rows, loss_th, sawit_th, f2000, ada_sawit):
         pk = []
         for kode in kode_semua:
             m = m_of.get(kode)
-            # m > 2025 mustahil utk CITRA (diklem), tapi mulai_c/d ikut iup_year
+            # m > 2025 mustahil utk CITRA (diklem), tapi mulai POLOS ikut iup_year
             # mentah — konsesi ber-SK di luar jendela dilewati (laju tak terdefinisi).
             if m is None or m > JENDELA_MAX:
                 continue
@@ -742,40 +757,11 @@ def main() -> int:
     # build_combined_db step_loss; tabel jendela_2009 lama dihapus, Fase B r2.)
     con.execute("DROP TABLE IF EXISTS jendela_2009")
 
-    # ── laju_izin_ringkas ────────────────────────────────────────────────────
-    con.execute("DROP TABLE IF EXISTS laju_izin_ringkas")
-    con.execute("""CREATE TABLE laju_izin_ringkas (
-        basis TEXT, dimensi TEXT, kelompok TEXT, n INTEGER, n_pct INTEGER,
-        total_loss_ha REAL,
-        median_ha_thn REAL, mean_ha_thn REAL, p25_ha_thn REAL, p75_ha_thn REAL,
-        p90_ha_thn REAL,
-        median_pct_thn REAL, mean_pct_thn REAL, p25_pct_thn REAL, p75_pct_thn REAL,
-        p90_pct_thn REAL,
-        PRIMARY KEY (basis, dimensi, kelompok))""")
-
-    def grup(dimensi, kunci):
-        """Baris ringkas kedua basis utk satu kelompok. kunci(r) -> ikut/tidak."""
-        anggota = [r for r in per_kon if kunci(r)]
-        keluar = []
-        # kotor: semua anggota kohort
-        keluar.append(("kotor", [r[2] for r in anggota], [r[3] for r in anggota],
-                       sum(r[6] for r in anggota)))
-        # bersih: hanya yang lajunya terdefinisi (mulai ≤ 2021 & sawit ada)
-        b = [r for r in anggota if r[4] is not None]
-        keluar.append(("bersih", [r[4] for r in b], [r[5] for r in b],
-                       sum(r[7] for r in b)))
-        return keluar
-
-    kelompok = [("semua", "SEMUA", lambda r: True)]
-    for kls in sorted({r[0] for r in per_kon}):
-        kelompok.append(("kelas", kls, lambda r, k=kls: r[0] == k))
-    for p in ("P1", "P2", "P3"):
-        kelompok.append(("periode", p, lambda r, p=p: r[1] == p))
-    for dimensi, nama, kunci in kelompok:
-        for basis, vha, vpct, tot in grup(dimensi, kunci):
-            con.execute(
-                "INSERT INTO laju_izin_ringkas VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-                (basis, dimensi, nama) + _stat_row(vha, vpct, tot))
+    # ── laju_izin_ringkas: kini VIEW (Fase G butir 2, 15 Agu) ────────────────
+    # Terbukti duplikat persis backtrack_laju_ringkas baris CITRA (EXCEPT dua
+    # arah = 0 baris — dihitung fungsi yang sama atas mulai yang sama), jadi
+    # tabelnya diganti VIEW: satu sumber kebenaran, konsumen lama tetap jalan.
+    # View dibuat SETELAH build_backtrack_tables() di bawah (tabel sumbernya).
 
     # ── laju_izin_eventstudy ─────────────────────────────────────────────────
     con.execute("DROP TABLE IF EXISTS laju_izin_eventstudy")
@@ -809,45 +795,30 @@ def main() -> int:
                     (kelas, rel, n, round(s, 2), round(s / n, 2) if n else None,
                      nb, round(sb, 2), round(sb / nb, 2) if nb else None))
 
-    # ── konsesi_aktif_tahunan: BERAPA KONSESI yang sudah aktif tiap tahun ──────
-    # Pendamping baseline_tahunan (yang isinya hektar). Dua deret KUMULATIF:
-    #   n_mulai_aktif  = konsesi yang tahun mulai aktifnya (aturan E) <= tahun
-    #   n_sk_terbit    = konsesi yang tahun SK-nya (iup_year) <= tahun
-    # Selisih keduanya = efek backtrack, dan n_aktif_sebelum_sk menghitungnya
-    # LANGSUNG per konsesi (bukan hasil pengurangan dua agregat, yang bisa
-    # menyesatkan kalau ada konsesi tanpa iup_year).
-    # Sebelum 2009 kolom n_mulai_aktif sengaja NULL, BUKAN 0: aturan mulai-aktif
-    # hanya memeriksa 2009-2025 (era UU Minerba), jadi "nol konsesi aktif di
-    # 2005" bukan temuan lapangan melainkan akibat batas aturan — menulis 0 akan
-    # dibaca sebagai klaim tentang kenyataan.
-    con.execute("DROP TABLE IF EXISTS konsesi_aktif_tahunan")
-    con.execute(
-        """CREATE TABLE konsesi_aktif_tahunan (
-            year INTEGER PRIMARY KEY,
-            n_mulai_aktif INTEGER,
-            n_sk_terbit INTEGER,
-            n_aktif_sebelum_sk INTEGER)"""
-    )
-    # Sumbernya tabel yang BARU SAJA ditulis di transaksi ini (bukan per_kon —
-    # baris per_kon tak memuat kode_wiup, hanya metrik agregat per konsesi).
-    mulai_of = dict(con.execute(
-        "SELECT kode_wiup, mulai FROM laju_izin_konsesi").fetchall())
-    iup_of = dict(con.execute(
-        "SELECT kode_wiup, iup_year FROM wiup_geoportal").fetchall())
-    for y in range(2001, JENDELA_MAX + 1):
-        n_sk = sum(1 for iy in iup_of.values() if iy is not None and iy <= y)
-        if y < JENDELA_MIN:
-            n_aktif = n_sebelum = None
-        else:
-            n_aktif = sum(1 for m in mulai_of.values() if m is not None and m <= y)
-            n_sebelum = sum(
-                1 for kode, m in mulai_of.items()
-                if m is not None and m <= y
-                and (iup_of.get(kode) is None or iup_of[kode] > y))
-        con.execute("INSERT INTO konsesi_aktif_tahunan VALUES (?,?,?,?)",
-                    (y, n_aktif, n_sk, n_sebelum))
-
+    # ── konsesi_aktif_tahunan: kini VIEW (Fase G butir 1, 15 Agu) ─────────────
+    # Terbukti duplikat persis backtrack_tahunan baris CITRA (EXCEPT dua arah =
+    # 0 baris; invarian backtrack-citra-tahunan sudah lama mengikatnya) → VIEW,
+    # bukan tabel kedua. Semantik tetap: n_mulai_aktif (kumulatif, NULL < 2009
+    # — batas aturan, bukan nol temuan), n_sk_terbit, n_aktif_sebelum_sk.
+    # Dibuat SETELAH build_backtrack_tables() (tabel sumbernya).
     build_backtrack_tables(con, rows, loss_th, sawit_th, f2000, ada_sawit)
+
+    def _drop_tabel_atau_view(nama):
+        """Bersihkan objek lama apa pun jenisnya (migrasi tabel → view)."""
+        t = con.execute("SELECT type FROM sqlite_master WHERE name=?", (nama,)).fetchone()
+        if t:
+            con.execute(f"DROP {'VIEW' if t[0] == 'view' else 'TABLE'} {nama}")
+
+    _drop_tabel_atau_view("konsesi_aktif_tahunan")
+    con.execute("""CREATE VIEW konsesi_aktif_tahunan AS
+        SELECT year, n_aktif AS n_mulai_aktif, n_sk_terbit, n_aktif_sebelum_sk
+        FROM backtrack_tahunan WHERE aturan = 'CITRA'""")
+    _drop_tabel_atau_view("laju_izin_ringkas")
+    con.execute("""CREATE VIEW laju_izin_ringkas AS
+        SELECT basis, dimensi, kelompok, n, n_pct, total_loss_ha,
+               median_ha_thn, mean_ha_thn, p25_ha_thn, p75_ha_thn, p90_ha_thn,
+               median_pct_thn, mean_pct_thn, p25_pct_thn, p75_pct_thn, p90_pct_thn
+        FROM backtrack_laju_ringkas WHERE aturan = 'CITRA'""")
 
     con.commit()
     n_kohort = len(per_kon)

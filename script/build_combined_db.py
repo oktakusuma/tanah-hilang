@@ -510,33 +510,40 @@ def step_kepadatan(conn, csv_path):
     Source: data/kepadatan_penduduk.csv (BPS). Previously this table was ingested
     manually outside the pipeline, so a rebuilt DB silently lost it — now it is a
     first-class, reproducible step keyed off the committed CSV.
+
+    Bentuk LONG (Fase G butir 8, 15 Agu 2026): satu baris per (kode_kabkot,
+    tahun) — eks kolom lebar d2015..d2024. CSV sumber tetap lebar (format BPS);
+    unpivot terjadi di sini saat ingest. Konsumen (server /api/kepadatan,
+    contoh query halaman Database) menyesuaikan.
     """
     print(f"\n[+] Loading kepadatan_penduduk from {csv_path}", file=sys.stderr)
     cur = conn.cursor()
     cur.execute("DROP TABLE IF EXISTS kepadatan_penduduk")
     cur.execute("""
         CREATE TABLE kepadatan_penduduk (
-            kode_kabkot TEXT PRIMARY KEY,
+            kode_kabkot TEXT,
             provinsi TEXT,
             kabupaten TEXT,
             kab_normalized TEXT,
-            d2015 REAL, d2016 REAL, d2017 REAL, d2018 REAL, d2019 REAL,
-            d2020 REAL, d2021 REAL, d2022 REAL, d2023 REAL, d2024 REAL,
+            tahun INTEGER,
+            kepadatan REAL,
             satuan TEXT,
-            sumber TEXT
+            sumber TEXT,
+            PRIMARY KEY (kode_kabkot, tahun)
         )
     """)
-    years = [f"d{y}" for y in range(2015, 2025)]
     n = 0
     with open(csv_path) as f:
         for row in csv.DictReader(f):
-            cur.execute(
-                "INSERT OR REPLACE INTO kepadatan_penduduk VALUES (" + ",".join(["?"] * 16) + ")",
-                (row["kode_kabkot"], row["provinsi"], row["kabupaten"], row["kab_normalized"],
-                 *[to_num(row.get(y)) for y in years], row.get("satuan"), row.get("sumber")))
-            n += 1
+            for tahun in range(2015, 2025):
+                cur.execute(
+                    "INSERT OR REPLACE INTO kepadatan_penduduk VALUES (?,?,?,?,?,?,?,?)",
+                    (row["kode_kabkot"], row["provinsi"], row["kabupaten"],
+                     row["kab_normalized"], tahun, to_num(row.get(f"d{tahun}")),
+                     row.get("satuan"), row.get("sumber")))
+                n += 1
     conn.commit()
-    print(f"     ✓ kepadatan_penduduk: {n} rows", file=sys.stderr)
+    print(f"     ✓ kepadatan_penduduk: {n} rows (long — baris per kab×tahun)", file=sys.stderr)
 
 
 def _match_pairs(conn, pairs):
