@@ -251,7 +251,7 @@ COLUMN_META = [
 
     # ── laju_izin_ringkas: distribusi laju per basis × dimensi × kelompok ───────
     ("laju_izin_ringkas", "basis", "Basis hitung: 'bersih' (Hansen − sawit, ≤2021; UTAMA) atau 'kotor' (Hansen penuh, ≤2025).", None, "scripts/build_laju_izin.py"),
-    ("laju_izin_ringkas", "dimensi", "Cara mengiris kohort: 'semua', 'kelas' (klasifikasi izin), 'periode' (P1-P3).", None, "scripts/build_laju_izin.py"),
+    ("laju_izin_ringkas", "dimensi", "Cara mengiris populasi: 'semua', 'kelas' (klasifikasi izin), 'kohort' (kohort tahun-terbit-SK P1-P3 — eks nilai 'periode', koreksi Fase T 16 Agu: isinya memang kohort SK n 239/262/284, tertinggal dari rename Fase G).", None, "scripts/build_laju_izin.py"),
     ("laju_izin_ringkas", "kelompok", "Nilai irisan: SEMUA / IZIN_PERTAMA / PERPANJANGAN / TAK_DINILAI / P1 / P2 / P3.", None, "laju_izin_konsesi"),
     ("laju_izin_ringkas", "n", "Jumlah konsesi kelompok ini yang lajunya terdefinisi di basis tsb.", "count", "laju_izin_konsesi"),
     ("laju_izin_ringkas", "n_pct", "Subset n yang laju %/thn-nya terdefinisi (hutan_mulai > 0).", "count pct NOT NULL", "laju_izin_konsesi"),
@@ -293,7 +293,7 @@ COLUMN_META = [
     # yang sama: CITRA=laju_izin_konsesi.mulai (label UI "Deteksi Hansen", UTAMA), INDIKASI/
     # POLOS=atribusi_izin_aktif.mulai baris aturan yang sama. Baris CITRA diikat
     # invarian cek_backtrack agar identik dgn tabel utama.
-    ("backtrack_tahunan", "aturan", "Metode penentuan tahun mulai: CITRA (codename internal; label UI & narasi tesis = 'Deteksi Hansen' — tahun pertama produk Hansen GFC mencatat tree-cover loss non-sawit ≥ 1 ha di poligon; metode UTAMA) / INDIKASI (kelas izin; perpanjangan → 2009) / POLOS (tanpa backtrack — murni max(2009, tahun SK)). Kode 'CITRA' sengaja DIPERTAHANKAN di DB (keputusan igoen 15 Agu) walau labelnya berganti — bukan berarti kami menafsirkan citra satelit sendiri. Aturan C/PERKIRAAN diarsipkan 15 Agu: cara baca aditif membuatnya ≡ INDIKASI.", None, "scripts/build_laju_izin.py"),
+    ("backtrack_tahunan", "aturan", "Metode penentuan tahun mulai: CITRA (codename internal; label UI & narasi tesis = 'Deteksi Hansen' — tahun pertama produk Hansen GFC mencatat tree-cover loss non-sawit ≥ 1 ha di poligon; metode UTAMA) / INDIKASI (kelas izin; perpanjangan → 2009) / POLOS (tanpa backtrack — murni max(2009, tahun SK)). Kode 'CITRA' sengaja DIPERTAHANKAN di DB (keputusan igoen 15 Agu) walau labelnya berganti — bukan berarti kami menafsirkan citra satelit sendiri. Aturan C/PERKIRAAN diarsipkan 15 Agu: cara baca aditif membuatnya ≡ INDIKASI. Tabel ini juga memuat baris BEBAS METODE aturan='SEMUA' (Fase T 16 Agu): seluruh 825 konsesi dianggap aktif sejak 2009 tanpa atribusi apa pun — PENYEBUT bersama slide Temuan (1.228.077 ha, angka yang tak bergantung metode). 'SEMUA' BUKAN metode keempat; seluruh konsumen UI memfilter aturan = metode terpilih ∈ {CITRA, INDIKASI, POLOS}.", None, "scripts/build_laju_izin.py"),
     ("backtrack_tahunan", "year", "Tahun kalender 2001-2025.", None, None),
     ("backtrack_tahunan", "n_aktif", "Kumulatif konsesi yang tahun mulainya (versi `aturan`) <= tahun ini. NULL utk tahun < 2009 (jendela hitung era Minerba — bukan nol).", "count(mulai_aturan <= year)", "scripts/build_laju_izin.py"),
     ("backtrack_tahunan", "n_sk_terbit", "Kumulatif konsesi ber-iup_year <= tahun ini (sama utk semua aturan).", "count(iup_year <= year)", "wiup_geoportal.iup_year"),
@@ -301,10 +301,11 @@ COLUMN_META = [
     ("backtrack_tahunan", "loss_ha", "Loss Hansen tahun ini dari konsesi yang SUDAH aktif versi `aturan` (flow). NULL utk tahun < 2009.", "Σ loss_ha konsesi aktif", "wiup_loss_yearly"),
     ("backtrack_tahunan", "loss_tanpa_sawit_ha", "Sama, dikurangi bagian sawit per tahun (max(0, loss−sawit)); NULL utk tahun > 2021 (batas Descals) atau < 2009.", "Σ max(0, loss−sawit)", "wiup_loss_yearly × atribusi_sawit_yearly"),
     ("backtrack_tahunan", "hutan_awal_tahun_ha", "Stok hutan yang masih berdiri AWAL tahun ini di konsesi yang sudah aktif (versi aturan): Σ (forest_2000 − loss 2001..thn−1). Penyebut laju %/tahun. NULL utk tahun < 2009.", "Σ (forest_2000 − Σ loss<y)", "wiup_loss × wiup_loss_yearly"),
+    ("backtrack_tahunan", "pct_hutan_per_thn", "LAJU tahun itu: 100 · loss_ha / hutan_awal_tahun_ha — persen hutan-berdiri yang hilang dalam setahun. Ditambah Fase T (16 Agu) supaya grafik irama tahunan tak perlu membagi di browser (Konvensi #6). Pakai kolom ini, BUKAN loss_ha, saat membandingkan tahun/periode: deret hektare mentah ikut naik hanya karena jumlah & luas konsesi aktif bertambah. NULL utk tahun < 2009 atau stok 0.", "100·loss_ha/hutan_awal_tahun_ha", None),
     # backtrack_periode_kalender — REDEFINISI periode (igoen 15 Agu): P1/P2/P3 =
     # jendela TAHUN KALENDER murni, bukan kohort tahun-terbit-SK. Loss jendela =
     # Σ flow backtrack_tahunan tahun-tahun itu dari konsesi AKTIF versi aturan.
-    ("backtrack_periode_kalender", "aturan", "Metode penentuan tahun mulai (CITRA/INDIKASI/POLOS) — lihat backtrack_tahunan.aturan.", None, None),
+    ("backtrack_periode_kalender", "aturan", "Metode penentuan tahun mulai (CITRA/INDIKASI/POLOS) — lihat backtrack_tahunan.aturan. Tabel ini juga memuat baris BEBAS METODE aturan='SEMUA' (Fase T 16 Agu): seluruh 825 konsesi dianggap aktif sejak 2009 tanpa atribusi, dipakai sbg PENYEBUT bersama slide Temuan. 'SEMUA' bukan metode keempat — konsumen UI memfilter aturan = metode terpilih.", None, None),
     ("backtrack_periode_kalender", "periode", "Jendela TAHUN KALENDER (P1 2009-2014 / P2 2015-2019 / P3 2020-2025) — redefinisi 15 Agu: BUKAN kohort tahun-terbit-SK; statistik kohort-SK tetap di backtrack_kohort (eks backtrack_periode).", None, None),
     ("backtrack_periode_kalender", "tahun_awal", "Tahun kalender pertama jendela (P1=2009, P2=2015, P3=2020).", None, None),
     ("backtrack_periode_kalender", "tahun_akhir", "Tahun kalender terakhir jendela (P1=2014, P2=2019, P3=2025).", None, None),
@@ -360,8 +361,8 @@ COLUMN_META = [
     ("backtrack_sawit", "persen_sawit_mulai_aktif_sampai_2021", "100 · loss_sawit / loss jendela [mulai aktif, 2021]; NULL bila penyebut 0 (eks persen_sawit_mulai_2021).", "100·sawit/loss", None),
     ("backtrack_laju_ringkas", "aturan", "Metode tahun mulai — lihat backtrack_tahunan.aturan.", None, None),
     ("backtrack_laju_ringkas", "basis", "Basis hitung: 'kotor' (Hansen, [mulai,2025]) atau 'bersih' (Hansen−sawit, [mulai,2021]).", None, None),
-    ("backtrack_laju_ringkas", "dimensi", "Pengelompokan baris: semua / kelas / periode.", None, None),
-    ("backtrack_laju_ringkas", "kelompok", "Nilai kelompok (SEMUA, kelas izin, atau P1-P3).", None, None),
+    ("backtrack_laju_ringkas", "dimensi", "Pengelompokan baris: 'semua' / 'kelas' (klasifikasi izin) / 'kohort' (kohort tahun-terbit-SK P1-P3). Nilai 'kohort' eks 'periode' (koreksi Fase T 16 Agu) — baris ini mengelompokkan menurut KAPAN SK TERBIT (n 239/262/284), bukan menurut jendela kalender; satu kata satu makna, 'periode' kini selalu berarti jendela kalender.", None, None),
+    ("backtrack_laju_ringkas", "kelompok", "Nilai kelompok (SEMUA, kelas izin, atau kohort SK P1-P3).", None, None),
     ("backtrack_laju_ringkas", "n", "Konsesi kelompok yang lajunya terdefinisi di basis+aturan ini.", None, None),
     ("backtrack_laju_ringkas", "n_pct", "Subset n yang laju %/thn-nya terdefinisi (hutan saat mulai > 0).", None, None),
     ("backtrack_laju_ringkas", "total_loss_ha", "Σ loss basis tsb, jendela [mulai versi aturan, 2025 (kotor) / 2021 (bersih)].", None, None),
@@ -393,6 +394,7 @@ COLUMN_META = [
     ("backtrack_signifikansi", "p_value", "p mentah dua-sisi.", None, None),
     ("backtrack_signifikansi", "p_adjusted", "p terkoreksi Holm (NULL utk baris Kruskal).", None, None),
     ("backtrack_signifikansi", "signifikan_005", "1 bila p (terkoreksi bila ada) < 0,05.", None, None),
+    ("backtrack_signifikansi", "besar_efek_r", "BESAR EFEK rank-biserial untuk baris mann_whitney_holm — menjawab 'seberapa besar bedanya', bukan 'seberapa yakin ada beda'. Tanda positif = grup A ber-nilai lebih RENDAH daripada grup B. Rujukan kasar: |r| 0,1 kecil · 0,3 sedang · 0,5 besar. NULL untuk baris kruskal_wallis (uji lintas 3 grup, tak punya U berpasangan). Ditambah Fase T 16 Agu: dgn n≈250 per grup, p kecil bisa muncul dari selisih yang tak berarti — jangan kutip p tanpa kolom ini.", "1 − 2·U/(n_a·n_b)", "scripts/build_laju_izin.py"),
 
     # ── Irisan halaman Statistik (Fase C 16 Agu): geografi · komoditas rinci ·
     #    aktor · keparahan · zona bebas — semuanya per metode backtrack,
@@ -419,7 +421,7 @@ COLUMN_META = [
     ("backtrack_komoditas_rinci", "loss_mulai_aktif_sampai_2021_tanpa_sawit_ha", "Varian tanpa-sawit [mulai aktif, 2021]; NULL bila lapisan sawit absen.", None, "wiup_loss_yearly × atribusi_sawit_yearly"),
     ("backtrack_komoditas_rinci", "pct_hutan2009_mulai_aktif_sampai_2025", "Intensitas komoditas: 100 · loss / hutan_2009_ha.", "100·loss/hutan_2009", None),
     ("backtrack_konsesi_top", "aturan", "Metode tahun mulai — lihat backtrack_tahunan.aturan.", None, None),
-    ("backtrack_konsesi_top", "peringkat", "Peringkat 1-10 menurut loss_mulai_aktif_sampai_2025_ha (menurun) DI DALAM aturan ini — peringkat disimpan supaya klien tak mengurut ulang.", None, None),
+    ("backtrack_konsesi_top", "peringkat", "Peringkat 1-25 menurut loss_mulai_aktif_sampai_2025_ha (menurun) DI DALAM aturan ini — peringkat disimpan supaya klien tak mengurut ulang. Diperluas dari 10 ke 25 (Fase T 16 Agu) agar konsesi yang jatuh KELUAR sepuluh besar di metode lain tetap terbaca; UI Statistik tetap merender 10 teratas.", None, None),
     ("backtrack_konsesi_top", "kode_wiup", "Kode WIUP konsesi (kunci ke wiup_geoportal).", None, "wiup_geoportal.kode_wiup"),
     ("backtrack_konsesi_top", "nama_usaha", "Nama badan usaha pemegang konsesi (didenormalisasi utk label chart).", None, "wiup_geoportal.nama_usaha"),
     ("backtrack_konsesi_top", "komoditas", "Komoditas konsesi.", None, "wiup_geoportal.komoditas"),
@@ -443,6 +445,79 @@ COLUMN_META = [
     ("backtrack_zona_bebas", "n_kab_bersih", "Kab/kota tanpa satu pun konsesi aktif pada tahun itu = n_kab_total − n_kab_ada_konsesi. Monoton tak naik terhadap tahun (himpunan aktif hanya bertambah) — diikat invarian.", "n_kab_total − n_kab_ada_konsesi", None),
     ("backtrack_zona_bebas", "kab_bersih", "Daftar nama KABUPATEN yang masih bebas konsesi pada tahun itu, dipisah koma.", None, None),
     ("backtrack_zona_bebas", "kota_bersih", "Daftar nama KOTA yang masih bebas konsesi pada tahun itu, dipisah koma (dipisah dari kabupaten karena kota memang jarang jadi wilayah izin).", None, None),
+
+    # ── backtrack_periode_kalender: 4 kolom penopang slide "naik atau turun" ──
+    # (Fase T 16 Agu) Deret hektare mentah versi tanggal SK NAIK sementara versi
+    # Deteksi Hansen TURUN. Penjelasnya bukan hutan yang makin cepat hilang,
+    # melainkan portofolio izin yang tumbuh — jadi jendela butuh penyebut hutan
+    # berdiri (kolom hutan_*) dan ukuran portofolio di AWAL jendela.
+    ("backtrack_periode_kalender", "hutan_awal_periode_ha", "Stok hutan yang masih berdiri pada AWAL jendela (tahun_awal) di konsesi yang sudah aktif versi `aturan` — snapshot backtrack_tahunan.hutan_awal_tahun_ha @ year=tahun_awal. Konteks, bukan penyebut: penyebut laju memakai hutan_tahun_total_ha.", "backtrack_tahunan.hutan_awal_tahun_ha @ year=tahun_awal", "backtrack_tahunan"),
+    ("backtrack_periode_kalender", "hutan_tahun_total_ha", "Σ stok hutan-berdiri AWAL TIAP TAHUN dalam jendela (bukan rata-rata × jumlah tahun) — penyebut pct_hutan_per_thn. Bentuk 'jumlah tahun-hektare' ini membuat jendela 6 tahun tak otomatis kalah dari jendela 5 tahun, dan menyerap fakta bahwa stok menyusut tiap tahun.", "Σ backtrack_tahunan.hutan_awal_tahun_ha, year ∈ [tahun_awal, tahun_akhir]", "backtrack_tahunan"),
+    ("backtrack_periode_kalender", "pct_hutan_per_thn", "LAJU jendela ini: 100 · loss_ha / hutan_tahun_total_ha, satuan % hutan-berdiri per tahun. Inilah angka yang boleh dibandingkan ANTAR jendela — hektare mentah tidak, karena jumlah & luas konsesi aktifnya berbeda jauh antar jendela (lihat luas_aktif_awal_ha). NULL bila penyebut 0/absen.", "100·loss_ha/hutan_tahun_total_ha", None),
+    ("backtrack_periode_kalender", "luas_aktif_awal_ha", "Σ luas SK konsesi yang sudah aktif versi `aturan` pada AWAL jendela ({mulai <= tahun_awal}) — ukuran PORTOFOLIO saat jendela dimulai. Bandingkan dgn luas_aktif_total_ha (akhir jendela): di POLOS angka ini tumbuh ~9,5× dari P1 ke P3, di CITRA praktis rata. Itu sebab deret hektare mentah kedua metode bergerak berlawanan arah.", "Σ luas_sk atas {mulai versi aturan <= tahun_awal}", "wiup_geoportal.luas_sk"),
+
+    # ══ Fase T (16 Agu): tabel penopang bagian "Temuan" halaman Statistik ═════
+    ("backtrack_tak_terlihat", "aturan", "Metode tahun mulai (CITRA/INDIKASI/POLOS) — lihat backtrack_tahunan.aturan.", None, None),
+    ("backtrack_tak_terlihat", "kohort", "Kohort tahun-terbit-SK: Pra-2009/P1/P2/P3 (menurut iup_year), TANPA_TAHUN_SK (iup_year kosong — 7 konsesi), SK_LUAR_JENDELA (iup_year di luar 1998-2025, mis. 2026 — 4 konsesi), SEMUA (baris total seluruh 825). Dua ember terakhir dulu menumpuk jadi satu 'TANPA_PERIODE'; dipisah Fase T supaya kalimat 'sekian ha di konsesi tanpa tahun SK' bisa dibuktikan dari DB.", None, "wiup_geoportal.iup_year"),
+    ("backtrack_tak_terlihat", "urutan", "Urutan tampil kohort (1..7) — supaya klien tak mengurut label teks.", None, None),
+    ("backtrack_tak_terlihat", "n_konsesi", "Jumlah konsesi kohort ini (seluruhnya, tak peduli tahun mulainya terdefinisi atau tidak).", "count", None),
+    ("backtrack_tak_terlihat", "n_ber_tahun_sk", "Subset n_konsesi yang PUNYA iup_year — penyebut kolom n_prask_*.", "count(iup_year IS NOT NULL)", "wiup_geoportal.iup_year"),
+    ("backtrack_tak_terlihat", "n_tak_terlihat_ge1", "Konsesi kohort ini yang tak_terlihat-nya >= 1 ha (ambang yang sama dgn AMBANG_BUKTI_HA).", "count", None),
+    ("backtrack_tak_terlihat", "n_tak_terlihat_gt100", "Konsesi kohort ini yang tak_terlihat-nya > 100 ha — bukan sekadar derau piksel.", "count", None),
+    ("backtrack_tak_terlihat", "tak_terlihat_ha", "PEMBILANG: Σ loss Hansen pada [2009, mulai aktif versi `aturan` − 1] — kehilangan di dalam jendela era Minerba yang metode ini TIDAK bebankan ke izin mana pun karena jamnya belum jalan. Konsesi yang tahun mulainya tak terdefinisi/di luar jendela menyumbang SELURUH loss 2009-2025-nya. BUKAN klaim tambang ilegal: iup_year adalah tahun dokumen izin yang berlaku sekarang, dan 525 konsesi terklasifikasi PERPANJANGAN (izin pendahulunya tak terdata).", "Σ loss [2009, mulai−1]", "wiup_loss_yearly"),
+    ("backtrack_tak_terlihat", "loss_2009_2025_ha", "PENYEBUT, sengaja BEBAS METODE: Σ loss Hansen 2009-2025 seluruh konsesi kohort ini, tanpa atribusi apa pun. Sama di ketiga aturan — itulah gunanya, supaya persen ketiga metode dibagi angka yang sama dan bisa dibandingkan.", "Σ loss [2009, 2025]", "wiup_loss_yearly"),
+    ("backtrack_tak_terlihat", "loss_terhitung_ha", "loss_2009_2025_ha − tak_terlihat_ha = bagian yang metode ini bebankan ke izin yang sudah berjalan (identik dgn Σ loss [mulai, 2025] kohort itu). Rekonsiliasi diikat invarian backtrack-tak-terlihat-rekonsil.", "loss_2009_2025_ha − tak_terlihat_ha", None),
+    ("backtrack_tak_terlihat", "pct_tak_terlihat", "100 · tak_terlihat_ha / loss_2009_2025_ha; NULL bila penyebut 0.", "100·tak_terlihat/loss_2009_2025", None),
+    ("backtrack_tak_terlihat", "n_prask_2001_ge1", "BEBAS METODE (nilainya sama di tiap `aturan`, sengaja diulang seperti n_kab_total): konsesi kohort ini yang punya jejak kehilangan >= 1 ha pada [2001, iup_year − 1] — jendela penuh Hansen, BUKAN mulai 2009, karena pertanyaannya 'apakah lahan ini sudah dibuka sebelum SK terbit' dan pembukaan 2003 sama sahihnya dgn 2012. NULL bila kohort tak punya konsesi ber-iup_year.", "count(Σ loss [2001, iup_year−1] >= 1 ha)", "wiup_loss_yearly × wiup_geoportal.iup_year"),
+    ("backtrack_tak_terlihat", "n_prask_2001_gt100", "Sama, ambang > 100 ha (menyingkirkan tafsir 'cuma derau piksel'). NULL bila kohort tak punya konsesi ber-iup_year.", "count(Σ loss [2001, iup_year−1] > 100 ha)", "wiup_loss_yearly × wiup_geoportal.iup_year"),
+    ("backtrack_selisih", "aturan", "Metode tahun mulai (CITRA/INDIKASI/POLOS) — lihat backtrack_tahunan.aturan.", None, None),
+    ("backtrack_selisih", "jenis", "Blok isi tabel: 'selisih' (sebaran iup_year − mulai, 6 ember, Σ = jumlah konsesi) · 'selisih_ringkas' (satu baris persentil untuk selisih > 0 saja) · 'klem' (berapa konsesi yang tahun mulainya jatuh persis di 2009, batas bawah jendela) · 'tahun_bukti' (sebaran tahun bukti MENTAH sebelum klem — HANYA untuk aturan CITRA, satu-satunya metode yang punya konsep bukti).", None, None),
+    ("backtrack_selisih", "ember", "Label ember dalam blok `jenis` (mis. '6–10', 'selisih > 0', 'mulai aktif = 2009', '2001–2008', '2012').", None, None),
+    ("backtrack_selisih", "urutan", "Urutan tampil ember di dalam satu (aturan, jenis).", None, None),
+    ("backtrack_selisih", "n_konsesi", "Jumlah konsesi di ember ini.", "count", None),
+    ("backtrack_selisih", "p25", "Persentil-25 selisih (tahun) — hanya blok 'selisih_ringkas'; NULL di blok lain.", "pctl(selisih>0, 25)", None),
+    ("backtrack_selisih", "median", "Median selisih (tahun) — hanya blok 'selisih_ringkas'; NULL di blok lain.", "pctl(selisih>0, 50)", None),
+    ("backtrack_selisih", "p75", "Persentil-75 selisih (tahun) — hanya blok 'selisih_ringkas'; NULL di blok lain.", "pctl(selisih>0, 75)", None),
+    ("backtrack_selisih", "maks", "Selisih terbesar (tahun) — hanya blok 'selisih_ringkas'; NULL di blok lain.", "max(selisih>0)", None),
+    ("backtrack_kesepakatan", "aturan_a", "Metode pertama pasangan (urutan tetap CITRA < INDIKASI < POLOS, jadi tiap pasangan muncul sekali).", None, None),
+    ("backtrack_kesepakatan", "aturan_b", "Metode kedua pasangan.", None, None),
+    ("backtrack_kesepakatan", "metrik", "Deret yang dikorelasikan: 'loss_ha' (hektare mentah per tahun) atau 'pct_thn' (100 · loss tahun itu / stok hutan berdiri awal tahun itu). Keduanya SENGAJA dilaporkan: kesepakatan tinggi hanya muncul di pct_thn, sedangkan loss_ha justru berbeda tajam — itu temuan (deret hektare mentah versi tanggal SK mengukur pertumbuhan portofolio izin, bukan laju deforestasi).", None, None),
+    ("backtrack_kesepakatan", "n_tahun", "Jumlah titik tahun yang dikorelasikan (2009-2025 = 17).", None, None),
+    ("backtrack_kesepakatan", "pearson", "Korelasi Pearson deret tahunan kedua metode (kemiripan bentuk & besaran, peka pada pencilan).", "Σ(x−x̄)(y−ȳ)/√(Σ(x−x̄)²Σ(y−ȳ)²)", "backtrack_tahunan"),
+    ("backtrack_kesepakatan", "spearman", "Korelasi Spearman = Pearson atas PERINGKAT (peringkat seri dirata-ratakan) — kemiripan URUTAN tahun ramai/sepi, tahan pencilan.", "pearson(rank(x), rank(y))", "backtrack_tahunan"),
+    ("backtrack_kesepakatan", "n_irisan_top10", "Berapa konsesi yang sama-sama masuk 10 besar KEDUA metode pasangan ini (dari 10). Sifat PASANGAN, bukan sifat metrik — nilainya sengaja diulang di kedua baris metrik. NULL bila backtrack_konsesi_top kosong (kolom wilayah absen).", "|top10(a) ∩ top10(b)|", "backtrack_konsesi_top"),
+    ("backtrack_tahun_ekstrem", "aturan", "Metode tahun mulai (CITRA/INDIKASI/POLOS).", None, None),
+    ("backtrack_tahun_ekstrem", "metrik", "'loss_ha' atau 'pct_thn' — deret yang diperingkat (definisi sama dgn backtrack_kesepakatan.metrik).", None, None),
+    ("backtrack_tahun_ekstrem", "jenis", "'puncak' (3 tahun tertinggi) atau 'palung' (3 tahun terendah).", None, None),
+    ("backtrack_tahun_ekstrem", "urutan", "Peringkat di dalam jenis-nya: 1 = paling tinggi (puncak) / paling rendah (palung).", None, None),
+    ("backtrack_tahun_ekstrem", "year", "Tahun kalender 2009-2025.", None, None),
+    ("backtrack_tahun_ekstrem", "nilai", "Nilai deret pada tahun itu (ha untuk loss_ha; %/tahun untuk pct_thn).", None, "backtrack_tahunan"),
+    ("backtrack_lorenz", "aturan", "Metode tahun mulai (CITRA/INDIKASI/POLOS).", None, None),
+    ("backtrack_lorenz", "persentil", "Titik kurva: 0, 10, 20, … 100 (persen konsesi TERATAS menurut besar kehilangan/luas).", None, None),
+    ("backtrack_lorenz", "n_konsesi", "Berapa konsesi yang masuk potongan teratas itu = ⌈persentil% × n⌉ (pembulatan KE ATAS — kurva tak boleh melompati konsesi yang persentilnya tepat di batas).", "ceil(persentil/100 · n)", None),
+    ("backtrack_lorenz", "pangsa_loss_teratas_pct", "Pangsa kehilangan yang ditanggung n_konsesi teratas itu, dari total kehilangan metode ini (%). Monoton naik, berakhir 100 pada persentil 100.", "100 · Σ loss teratas / Σ loss", "wiup_loss_yearly"),
+    ("backtrack_lorenz", "pangsa_luas_teratas_pct", "Pembanding: pangsa LUAS SK yang dipegang konsesi terluas dalam jumlah yang sama (diurut menurut luas, bukan menurut loss). Menjawab 'apakah pemusatan kerusakan cuma cerminan pemusatan luas izin'.", "100 · Σ luas_sk terluas / Σ luas_sk", "wiup_geoportal.luas_sk"),
+    ("backtrack_lorenz", "gini_loss", "Indeks Gini kehilangan per konsesi (0 merata, 1 terpusat penuh) — sama di tiap baris satu aturan (sifat sebaran, bukan sifat titik kurva).", "(2Σi·xᵢ)/(nΣx) − (n+1)/n atas loss terurut", "scripts/build_laju_izin.py"),
+    ("backtrack_lorenz", "gini_luas", "Indeks Gini luas SK per konsesi — pembanding gini_loss. Kalau gini_loss > gini_luas, kerusakan lebih terpusat daripada luas izin: 'yang besar merusak besar' tak cukup menjelaskan.", "(2Σi·xᵢ)/(nΣx) − (n+1)/n atas luas_sk terurut", "scripts/build_laju_izin.py"),
+    ("backtrack_top_union", "kode_wiup", "Kode WIUP konsesi (kunci ke wiup_geoportal).", None, "wiup_geoportal.kode_wiup"),
+    ("backtrack_top_union", "urutan", "Urutan tampil 1..N, menurun menurut loss_citra_ha (metode utama) — supaya klien tak mengurut ulang.", None, None),
+    ("backtrack_top_union", "nama_usaha", "Nama badan usaha pemegang konsesi (didenormalisasi utk label tabel).", None, "wiup_geoportal.nama_usaha"),
+    ("backtrack_top_union", "komoditas", "Komoditas konsesi.", None, "wiup_geoportal.komoditas"),
+    ("backtrack_top_union", "nama_prov", "Provinsi konsesi (bagian pertama bila lintas-provinsi).", None, "wiup_geoportal.nama_prov"),
+    ("backtrack_top_union", "iup_year", "Tahun terbit SK yang tercatat Geoportal — tahun dokumen izin yang berlaku sekarang, BUKAN tentu tahun pemberian pertama.", None, "wiup_geoportal.iup_year"),
+    ("backtrack_top_union", "kelas", "Kelas izin (IZIN_PERTAMA/PERPANJANGAN/TAK_DINILAI).", None, "klasifikasi_izin.kelas"),
+    ("backtrack_top_union", "durasi_sk", "Masa berlaku SK dalam tahun. Bukti internal yang berguna: IUP Operasi Produksi PEMBERIAN PERTAMA menurut UU 4/2009 Ps. 47 berjangka 20 tahun, jadi SK berjangka 10-11 tahun hampir pasti bukan pemberian pertama. NULL bila tak bisa dihitung.", None, "klasifikasi_izin.durasi_sk"),
+    ("backtrack_top_union", "loss_2009_2025_ha", "Kehilangan Hansen 2009-2025 di poligon ini, BEBAS METODE (tanpa atribusi) — pembanding netral untuk ketiga kolom loss_*_ha.", "Σ loss [2009, 2025]", "wiup_loss_yearly"),
+    ("backtrack_top_union", "n_top10_metode", "Di berapa metode (0-3) konsesi ini masuk 10 besar. 3 = disepakati semua metode; 1 = hanya satu metode yang menyorotinya.", "count(peringkat_* <= 10)", None),
+    ("backtrack_top_union", "peringkat_citra", "Peringkat PENUH (1..n seluruh konsesi metode itu, bukan 1..10) menurut kehilangan jendela [mulai aktif Deteksi Hansen, 2025]. Peringkat penuh sengaja disimpan: 'peringkat 1 di Hansen, peringkat 94 di Polos' jauh lebih informatif daripada sel kosong. NULL bila metode ini tak punya tahun mulai untuk konsesi tsb.", None, "scripts/build_laju_izin.py"),
+    ("backtrack_top_union", "mulai_citra", "Tahun mulai aktif versi Deteksi Hansen.", None, "laju_izin_konsesi.mulai"),
+    ("backtrack_top_union", "loss_citra_ha", "Kehilangan jendela [mulai aktif Deteksi Hansen, 2025] konsesi ini.", "Σ loss [mulai, 2025]", "wiup_loss_yearly"),
+    ("backtrack_top_union", "peringkat_indikasi", "Peringkat penuh versi Indikasi kelas izin (lihat peringkat_citra).", None, None),
+    ("backtrack_top_union", "mulai_indikasi", "Tahun mulai aktif versi Indikasi kelas izin.", None, "atribusi_izin_aktif.mulai"),
+    ("backtrack_top_union", "loss_indikasi_ha", "Kehilangan jendela [mulai aktif Indikasi, 2025] konsesi ini.", "Σ loss [mulai, 2025]", "wiup_loss_yearly"),
+    ("backtrack_top_union", "peringkat_polos", "Peringkat penuh versi Polos — tahun SK saja (lihat peringkat_citra).", None, None),
+    ("backtrack_top_union", "mulai_polos", "Tahun mulai aktif versi Polos = max(2009, tahun SK).", None, "atribusi_izin_aktif.mulai"),
+    ("backtrack_top_union", "loss_polos_ha", "Kehilangan jendela [max(2009, tahun SK), 2025] konsesi ini.", "Σ loss [mulai, 2025]", "wiup_loss_yearly"),
 
     # ── laju_izin_eventstudy: loss per tahun-relatif-izin ───────────────────────
     ("laju_izin_eventstudy", "kelas", "Kelas izin (IZIN_PERTAMA/PERPANJANGAN/TAK_DINILAI) + rollup 'SEMUA'.", None, "atribusi_izin_aktif.kelas"),
@@ -2224,6 +2299,62 @@ def main() -> int:
          "atas loss & laju %/thn jendela [mulai, 2025].",
          "laju_izin_konsesi × atribusi_izin_aktif × wiup_loss_yearly",
          "Sampel = konsesi P1/P2/P3 ber-mulai; kosong bila scipy absen saat build.",
+         "scripts/build_laju_izin.py"),
+        # ── Fase T (16 Agu): penopang bagian "Temuan" halaman Statistik ────
+        ("backtrack_tak_terlihat",
+         "Berapa kehilangan 2009-2025 yang JATUH SEBELUM jam tiap metode mulai — "
+         "per kohort tahun-terbit-SK, dgn penyebut yang sengaja BEBAS METODE.",
+         "laju_izin_konsesi × atribusi_izin_aktif × wiup_loss_yearly × wiup_geoportal.iup_year",
+         "tak_terlihat_ha = Σ loss [2009, mulai versi aturan − 1] (konsesi tanpa tahun mulai "
+         "menyumbang seluruh loss 2009-2025); penyebut loss_2009_2025_ha = Σ loss 2009-2025 "
+         "kohort itu tanpa atribusi apa pun, jadi persen ketiga metode sebanding. Kolom "
+         "n_prask_2001_* memakai jendela penuh [2001, iup_year−1] (pertanyaannya 'sudah dibuka "
+         "sebelum SK?'), bebas metode. Rekonsiliasi tak_terlihat + loss_terhitung = penyebut "
+         "diikat invarian backtrack-tak-terlihat-rekonsil.",
+         "scripts/build_laju_izin.py"),
+        ("backtrack_selisih",
+         "Sebaran jarak tahun (iup_year − tahun mulai aktif) per metode + sebaran tahun BUKTI "
+         "mentah sebelum diklem ke 2009 — dasar pengakuan batas metode Deteksi Hansen.",
+         "laju_izin_konsesi × atribusi_izin_aktif × wiup_geoportal.iup_year",
+         "Blok 'selisih': 6 ember (tak terdefinisi / ≤0 / 1–2 / 3–5 / 6–10 / 11+), Σ = jumlah "
+         "konsesi (diikat invarian). Blok 'selisih_ringkas': p25/median/p75/maks untuk selisih > 0. "
+         "Blok 'klem': berapa konsesi bertahun-mulai persis 2009 (batas bawah jendela). Blok "
+         "'tahun_bukti' HANYA aturan CITRA: cacah tahun_bukti apa adanya (2001-2008 digabung "
+         "satu ember, lalu per tahun ≥ 2009, plus 'tanpa bukti').",
+         "scripts/build_laju_izin.py"),
+        ("backtrack_kesepakatan",
+         "Kemiripan deret tahunan 2009-2025 antar pasangan metode (Pearson & Spearman) × dua "
+         "metrik, plus jumlah irisan 10 besar konsesi — uji kekokohan kesimpulan terhadap "
+         "pilihan metode.",
+         "backtrack_tahunan + backtrack_konsesi_top",
+         "Tiga pasangan (CITRA-INDIKASI, CITRA-POLOS, INDIKASI-POLOS) × metrik loss_ha & "
+         "pct_thn (= 100·loss tahun itu / hutan_awal_tahun_ha). Spearman = Pearson atas "
+         "peringkat rata-rata. Keduanya dilaporkan dgn sengaja: kesepakatan tinggi hanya di "
+         "pct_thn; loss_ha justru berbeda tajam, dan itu temuannya.",
+         "scripts/build_laju_izin.py"),
+        ("backtrack_tahun_ekstrem",
+         "Tiga tahun tertinggi (puncak) & terendah (palung) deret tahunan tiap metode × metrik "
+         "— pendamping backtrack_kesepakatan.",
+         "backtrack_tahunan",
+         "Urut menurun/menaik atas deret 2009-2025 metode itu; disimpan 3 teratas tiap arah "
+         "supaya klien tak mengurut ulang.",
+         "scripts/build_laju_izin.py"),
+        ("backtrack_lorenz",
+         "Kurva pemusatan: pangsa kehilangan yang ditanggung X% konsesi teratas, berdampingan "
+         "dgn pangsa LUAS SK yang dipegang X% konsesi terluas + Gini keduanya.",
+         "wiup_loss_yearly × wiup_geoportal.luas_sk",
+         "Titik 0,10,…,100; n_konsesi = ⌈persentil%·n⌉ konsesi teratas (pembulatan ke atas). "
+         "Populasi = konsesi ber-tahun-mulai ≤ 2025 versi aturan; jendela loss [mulai, 2025]. "
+         "gini_loss & gini_luas diulang di tiap baris (sifat sebaran, bukan sifat titik kurva); "
+         "monotonisitas & ujung 100% diikat invarian backtrack-lorenz.",
+         "scripts/build_laju_izin.py"),
+        ("backtrack_top_union",
+         "Gabungan 10 besar konsesi KETIGA metode dalam satu baris per konsesi — peringkat, "
+         "tahun mulai & kehilangan tiap metode berdampingan, plus tahun/durasi SK.",
+         "backtrack_konsesi_top + laju_izin_konsesi × atribusi_izin_aktif × klasifikasi_izin",
+         "Anggota = konsesi yang masuk 10 besar di metode mana pun. peringkat_* adalah peringkat "
+         "PENUH (1..n seluruh konsesi metode itu), bukan 1..10 — supaya 'peringkat 1 di Deteksi "
+         "Hansen, peringkat 94 di Polos' terbaca. Urutan baris menurun menurut loss_citra_ha.",
          "scripts/build_laju_izin.py"),
         ("konsesi_aktif_tahunan",
          "VIEW kompatibilitas (Fase G 15 Agu): berapa konsesi yang sudah aktif tiap tahun "
