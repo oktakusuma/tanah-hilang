@@ -549,6 +549,40 @@ menandai 2 konsesi yang selisih pembulatannya melewati toleransi 0,01 ha
 - **`make_charts.py` + `trend_analysis.py`** — *(opsional)* figur PNG + uji tren
   Mann-Kendall untuk naskah; tidak dipakai web app.
 
+### Replikasi peta di QGIS (opsional)
+
+Bundel ini juga bisa dipakai membangun **peta interaktif di QGIS** yang
+tampilannya sepadan dengan halaman Peta web app (piksel loss Hansen berwarna
+per tahun, jendela era Minerba 2009–2025, outline konsesi, slider tahun).
+Urutannya:
+
+1. **Jalankan pipeline sampai selesai** (bagian 3 di atas) → `data/kalimantan.db`
+   jadi. Raster Hansen sudah terunduh di `data/raster/` sejak langkah 4
+   (`download_hansen.py`).
+2. **Ekspor geojson konsesi dari DB** (= langkah 16):
+   ```bash
+   python script/sync_geojson_from_db.py
+   ```
+   → `data/wiup/kalimantan_with_loss.geojson` (825 konsesi; properti a.l.
+   `iup_year`, `loss_2009_2025_ha`, `loss_2001_ha`…`loss_2025_ha`) — inilah
+   layer poligon untuk QGIS.
+3. **Di QGIS**: gabungkan 4 TIF `lossyear` jadi satu VRT (*Raster →
+   Miscellaneous → Build Virtual Raster*), clip ke poligon konsesi (*GDAL →
+   Clip raster by mask layer*, NoData `255`), lalu jalankan
+   **`script/qgis_loss_slider.py`** dari Python Console QGIS (edit `SRC_NAME`
+   sesuai nama layer). Skrip membuat 17 layer "Loss s.d. 2009…2025" dengan
+   **warna per tahun persis peta web** (tabel `YEAR_HEX` di dalam skrip) —
+   aktifkan *Temporal Controller* rentang 2009-01-01 → 2026-01-01, step
+   1 years, untuk slider tahunnya. Basemap padanan web: XYZ
+   `https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}`;
+   batas kabupaten: `data/boundaries/kalimantan-kabupaten.geojson`.
+
+Yang **tidak** disertakan bundel: raster Hansen (unduh sendiri via
+`download_hansen.py`, langkah 4) dan raster sawit Descals (via
+`fetch_descals.py`) — tanpa Descals, lapisan piksel sawitnya saja yang tak
+bisa direplikasi. Skrip `qgis_loss_slider.py` **byte-identik** dengan repo
+utama; hanya bisa dijalankan **di dalam QGIS** (butuh modul `qgis.core`).
+
 ---
 
 ## 4. Dua versi hasil (kenapa?)
