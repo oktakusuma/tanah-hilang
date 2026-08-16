@@ -3,8 +3,8 @@ Cross-check temporal: tree cover loss vs tanggal IUP terbit.
 
 Hipotesis: Apakah loss accelerate setelah izin terbit?
 Untuk setiap WIUP, hitung:
-  - loss_pre_iup_ha   : loss tahun-tahun SEBELUM tgl_berlak
-  - loss_post_iup_ha  : loss tahun-tahun SETELAH tgl_berlak
+  - loss_2001_sampai_tahun_izin_ha   : loss tahun-tahun SEBELUM tgl_berlak
+  - loss_tahun_izin_sampai_2025_ha  : loss tahun-tahun SETELAH tgl_berlak
   - loss_rate_pre     : ha/tahun sebelum IUP
   - loss_rate_post    : ha/tahun setelah IUP
   - ratio             : post/pre (>1 = accelerated post-IUP)
@@ -89,11 +89,11 @@ def main() -> int:
         if not iup_year or iup_year < 2001 or iup_year > 2025:
             # Can't compare meaningfully
             out_rows.append({**r, "iup_year": iup_year or "",
-                             "loss_pre_iup_ha": "", "loss_post_iup_ha": "",
-                             "n_years_pre": "", "n_years_post": "",
-                             "rate_pre_ha_per_year": "",
-                             "rate_post_ha_per_year": "",
-                             "ratio_post_pre": "", "verdict": "no_iup_date_or_out_of_range"})
+                             "loss_2001_sampai_tahun_izin_ha": "", "loss_tahun_izin_sampai_2025_ha": "",
+                             "n_tahun_dari_2001_sampai_tahun_izin": "", "n_tahun_dari_tahun_izin_sampai_2025": "",
+                             "rate_2001_sampai_tahun_izin_ha_per_year": "",
+                             "rate_tahun_izin_sampai_2025_ha_per_year": "",
+                             "ratio_laju_sesudah_vs_sebelum_tahun_izin": "", "verdict": "no_iup_date_or_out_of_range"})
             continue
         has_iup += 1
 
@@ -121,22 +121,22 @@ def main() -> int:
             verdict = "stable"
 
         out_rows.append({**r, "iup_year": iup_year,
-                         "loss_pre_iup_ha": round(pre, 2),
-                         "loss_post_iup_ha": round(post, 2),
-                         "n_years_pre": n_pre,
-                         "n_years_post": n_post,
-                         "rate_pre_ha_per_year": round(rate_pre, 2),
-                         "rate_post_ha_per_year": round(rate_post, 2),
-                         "ratio_post_pre": (round(ratio, 2) if ratio != float("inf")
+                         "loss_2001_sampai_tahun_izin_ha": round(pre, 2),
+                         "loss_tahun_izin_sampai_2025_ha": round(post, 2),
+                         "n_tahun_dari_2001_sampai_tahun_izin": n_pre,
+                         "n_tahun_dari_tahun_izin_sampai_2025": n_post,
+                         "rate_2001_sampai_tahun_izin_ha_per_year": round(rate_pre, 2),
+                         "rate_tahun_izin_sampai_2025_ha_per_year": round(rate_post, 2),
+                         "ratio_laju_sesudah_vs_sebelum_tahun_izin": (round(ratio, 2) if ratio != float("inf")
                                             else "inf"),
                          "verdict": verdict})
 
     # Write
     args.output.parent.mkdir(parents=True, exist_ok=True)
-    fields = list(rows[0].keys()) + ["iup_year", "loss_pre_iup_ha",
-                                      "loss_post_iup_ha", "n_years_pre",
-                                      "n_years_post", "rate_pre_ha_per_year",
-                                      "rate_post_ha_per_year", "ratio_post_pre",
+    fields = list(rows[0].keys()) + ["iup_year", "loss_2001_sampai_tahun_izin_ha",
+                                      "loss_tahun_izin_sampai_2025_ha", "n_tahun_dari_2001_sampai_tahun_izin",
+                                      "n_tahun_dari_tahun_izin_sampai_2025", "rate_2001_sampai_tahun_izin_ha_per_year",
+                                      "rate_tahun_izin_sampai_2025_ha_per_year", "ratio_laju_sesudah_vs_sebelum_tahun_izin",
                                       "verdict"]
     with args.output.open("w", newline="") as f:
         w = csv.DictWriter(f, fieldnames=fields)
@@ -160,10 +160,10 @@ def main() -> int:
     valid = [r for r in out_rows if r["verdict"] not in
              ("no_iup_date_or_out_of_range", "no_loss_either")]
     if valid:
-        total_pre = sum(float(r["loss_pre_iup_ha"]) for r in valid)
-        total_post = sum(float(r["loss_post_iup_ha"]) for r in valid)
-        avg_rate_pre = sum(float(r["rate_pre_ha_per_year"]) for r in valid)/len(valid)
-        avg_rate_post = sum(float(r["rate_post_ha_per_year"]) for r in valid)/len(valid)
+        total_pre = sum(float(r["loss_2001_sampai_tahun_izin_ha"]) for r in valid)
+        total_post = sum(float(r["loss_tahun_izin_sampai_2025_ha"]) for r in valid)
+        avg_rate_pre = sum(float(r["rate_2001_sampai_tahun_izin_ha_per_year"]) for r in valid)/len(valid)
+        avg_rate_post = sum(float(r["rate_tahun_izin_sampai_2025_ha_per_year"]) for r in valid)/len(valid)
         print(f"\n  Aggregate (over {len(valid)} WIUPs with loss & IUP date):")
         print(f"    Total loss PRE-IUP  : {total_pre:>12,.0f} ha")
         print(f"    Total loss POST-IUP : {total_post:>12,.0f} ha")
@@ -175,16 +175,16 @@ def main() -> int:
 
     # Top examples of accelerated cases
     accel = [r for r in out_rows if r["verdict"] == "accelerated_post_iup"
-             and float(r["loss_post_iup_ha"]) > 1000]
-    accel.sort(key=lambda r: -float(r["loss_post_iup_ha"]))
+             and float(r["loss_tahun_izin_sampai_2025_ha"]) > 1000]
+    accel.sort(key=lambda r: -float(r["loss_tahun_izin_sampai_2025_ha"]))
     print(f"\n  Top 10 'accelerated post-IUP' (>1000ha post-loss):")
     print(f"  {'#':<3} {'Perusahaan':<28} {'IUP':<6} {'Pre/y':>6} {'Post/y':>7} {'Ratio':>6}")
     for i, r in enumerate(accel[:10], 1):
         nu = (r["nama_usaha"] or "")[:28]
         print(f"  {i:<3} {nu:<28} {r['iup_year']:<6} "
-              f"{float(r['rate_pre_ha_per_year']):>6.0f} "
-              f"{float(r['rate_post_ha_per_year']):>7.0f} "
-              f"{r['ratio_post_pre']!s:>6}")
+              f"{float(r['rate_2001_sampai_tahun_izin_ha_per_year']):>6.0f} "
+              f"{float(r['rate_tahun_izin_sampai_2025_ha_per_year']):>7.0f} "
+              f"{r['ratio_laju_sesudah_vs_sebelum_tahun_izin']!s:>6}")
     return 0
 
 

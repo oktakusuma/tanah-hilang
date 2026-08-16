@@ -111,14 +111,16 @@ LAPISAN_SHELLS = """
 CREATE TABLE IF NOT EXISTS atribusi_sawit (
   kode_wiup                      TEXT PRIMARY KEY REFERENCES wiup_geoportal(kode_wiup),
   loss_2001_2021_ha              REAL,
-  loss_sawit_tol2th_ha           REAL,
-  loss_sawit_jeda5th_ha          REAL,
-  loss_sawit_tahunsama_ha        REAL,
+  loss_sawit_tol2th_2001_2021_ha           REAL,
+  loss_sawit_jeda5th_2001_2021_ha          REAL,
+  loss_sawit_tahunsama_2001_2021_ha        REAL,
   loss_2022_2025_ha              REAL,
   n_tile_hansen                  INTEGER,
-  loss_sawit_pra_izin_ha         REAL,
-  loss_sawit_pasca_izin_2021_ha  REAL,
-  loss_pasca_izin_2021_ha        REAL
+  loss_sawit_2001_sampai_tahun_izin_ha         REAL,
+  loss_sawit_tahun_izin_sampai_2021_ha  REAL,
+  loss_tahun_izin_sampai_2021_ha        REAL,
+  loss_2009_2021_ha              REAL,
+  loss_sawit_2009_2021_ha        REAL
 );
 
 CREATE TABLE IF NOT EXISTS klasifikasi_izin (
@@ -341,9 +343,19 @@ def _create_loss_tables(cur, if_not_exists=False):
             kode_wiup TEXT PRIMARY KEY,
             polygon_area_ha REAL,
             forest_2000_ha REAL,
-            total_loss_ha REAL,
-            loss_pct_of_polygon REAL,
-            loss_pct_of_forest REAL,
+            -- Penamaan jendela EKSPLISIT (Fase B, keputusan igoen 12 Agu):
+            -- loss_2001_2025_ha = eks total_loss_ha (loss Hansen mulai 2001;
+            -- 2000 adalah baseline HUTAN, bukan tahun kehilangan).
+            loss_2001_2025_ha REAL,
+            loss_pct_poligon_2001_2025 REAL,
+            -- Jendela PEMBILANG masuk nama (rename 15 Agu; eks loss_pct_hutan2000):
+            -- persen yang tanpa jendela terbaca "sepanjang masa", padahal 2001-2025.
+            loss_2001_2025_pct_hutan2000 REAL,
+            -- Jendela era Minerba (identitas eksak dari wiup_loss_yearly):
+            loss_2001_2008_ha REAL,
+            hutan_2009_ha REAL,
+            loss_2009_2025_ha REAL,
+            loss_2009_2025_pct_hutan2009 REAL,
             tiles TEXT,
             threshold INTEGER DEFAULT 30,
             hansen_version TEXT DEFAULT 'GFC-2025-v1.13',
@@ -368,13 +380,20 @@ def _create_temporal_table(cur, if_not_exists=False):
         CREATE TABLE {ine}wiup_temporal (
             kode_wiup TEXT PRIMARY KEY,
             iup_year INTEGER,
-            loss_pre_iup_ha REAL,
-            loss_post_iup_ha REAL,
-            n_years_pre INTEGER,
-            n_years_post INTEGER,
-            rate_pre_ha_per_year REAL,
-            rate_post_ha_per_year REAL,
-            ratio_post_pre TEXT,
+            loss_2001_sampai_tahun_izin_ha REAL,
+            loss_tahun_izin_sampai_2025_ha REAL,
+            n_tahun_dari_2001_sampai_tahun_izin INTEGER,
+            n_tahun_dari_tahun_izin_sampai_2025 INTEGER,
+            rate_2001_sampai_tahun_izin_ha_per_year REAL,
+            rate_tahun_izin_sampai_2025_ha_per_year REAL,
+            -- Jendela era Minerba (Fase B): sisi PRA-izin diklip ke >=2009 —
+            -- loss_2001_sampai_tahun_izin_ha penuh mencakup 2001-2008 di luar era Minerba.
+            loss_2009_sampai_tahun_izin_ha REAL,
+            -- eks n_years_pre_2009 (rename 15 Agu): pola 'n_tahun_dari_X_sampai_Y'
+            -- + jangkar tahun_izin — nama lama terbaca "tahun-tahun sebelum 2009".
+            n_tahun_dari_2009_sampai_tahun_izin INTEGER,
+            rate_2009_sampai_tahun_izin_ha_per_year REAL,
+            ratio_laju_sesudah_vs_sebelum_tahun_izin TEXT,
             verdict TEXT,
             FOREIGN KEY (kode_wiup) REFERENCES wiup_geoportal(kode_wiup)
         )
@@ -400,17 +419,36 @@ def step_loss(conn, batch_csv, only_wiup=None):
             kw = row["kode_wiup"]
             if only_wiup is not None and kw not in only_wiup:
                 continue
+            # CSV kanonik kini SUDAH bernama eksplisit (batch_analyze.py Fase B);
+            # nama lama diterima sbg fallback utk CSV arsip pra-rename. Kolom
+            # jendela era Minerba dihitung dari kolom per-tahun (identitas eksak)
+            # supaya tak bergantung kolom turunannya CSV.
+            f2000 = to_num(row.get("forest_2000_ha"))
+            l0108 = sum(to_num(row.get(f"loss_{y}_ha"), 0) or 0 for y in range(2001, 2009))
+            l0925 = sum(to_num(row.get(f"loss_{y}_ha"), 0) or 0 for y in range(2009, 2026))
+            h2009 = (f2000 - l0108) if f2000 is not None else None
+            pct2009 = round(100.0 * l0925 / h2009, 2) if h2009 and h2009 > 0 else None
             cur.execute("""
                 INSERT OR REPLACE INTO wiup_loss
-                (kode_wiup, polygon_area_ha, forest_2000_ha, total_loss_ha,
-                 loss_pct_of_polygon, loss_pct_of_forest, tiles)
-                VALUES (?,?,?,?,?,?,?)
+                (kode_wiup, polygon_area_ha, forest_2000_ha, loss_2001_2025_ha,
+                 loss_pct_poligon_2001_2025, loss_2001_2025_pct_hutan2000,
+                 loss_2001_2008_ha, hutan_2009_ha, loss_2009_2025_ha,
+                 loss_2009_2025_pct_hutan2009, tiles)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?)
             """, (kw,
                   to_num(row.get("polygon_area_ha")),
-                  to_num(row.get("forest_2000_ha")),
-                  to_num(row.get("total_loss_ha")),
-                  to_num(row.get("loss_pct_of_polygon")),
-                  to_num(row.get("loss_pct_of_forest")),
+                  f2000,
+                  to_num(row.get("loss_2001_2025_ha", row.get("total_loss_ha"))),
+                  to_num(row.get("loss_pct_poligon_2001_2025", row.get("loss_pct_of_polygon"))),
+                  # Rantai fallback nama CSV: kanonik baru → nama Fase B →
+                  # nama pra-rename — CSV raster arsip TIDAK ditulis ulang
+                  # (hitung ulang berjam-jam; batas rename = lapisan DB, DECISIONS).
+                  to_num(row.get("loss_2001_2025_pct_hutan2000",
+                                 row.get("loss_pct_hutan2000", row.get("loss_pct_of_forest")))),
+                  round(l0108, 2),
+                  round(h2009, 2) if h2009 is not None else None,
+                  round(l0925, 2),
+                  pct2009,
                   row.get("tiles")))
             n_summary += 1
             for y in range(2001, 2026):
@@ -437,16 +475,30 @@ def step_temporal(conn, csv_path, only_wiup=None):
         for row in csv.DictReader(f):
             if only_wiup is not None and row["kode_wiup"] not in only_wiup:
                 continue
+            iy = to_int(row.get("iup_year"))
+            # Sisi pra-izin diklip ke era Minerba (>=2009) dari wiup_loss_yearly
+            # (identitas, bukan estimasi). iup <= 2009 → jendela pra-2009 kosong.
+            pre09 = n09 = rate09 = None
+            if iy is not None and iy > 2009:
+                pre09 = cur.execute(
+                    "SELECT ROUND(COALESCE(SUM(loss_ha),0),2) FROM wiup_loss_yearly "
+                    "WHERE kode_wiup=? AND year BETWEEN 2009 AND ?",
+                    (row["kode_wiup"], iy - 1)).fetchone()[0]
+                n09 = iy - 2009
+                rate09 = round(pre09 / n09, 2) if n09 > 0 else None
+            elif iy is not None:
+                pre09, n09 = 0.0, 0
             cur.execute("""
-                INSERT OR REPLACE INTO wiup_temporal VALUES (?,?,?,?,?,?,?,?,?,?)
-            """, (row["kode_wiup"], to_int(row.get("iup_year")),
-                  to_num(row.get("loss_pre_iup_ha")),
-                  to_num(row.get("loss_post_iup_ha")),
-                  to_int(row.get("n_years_pre")),
-                  to_int(row.get("n_years_post")),
-                  to_num(row.get("rate_pre_ha_per_year")),
-                  to_num(row.get("rate_post_ha_per_year")),
-                  row.get("ratio_post_pre"), row.get("verdict")))
+                INSERT OR REPLACE INTO wiup_temporal VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
+            """, (row["kode_wiup"], iy,
+                  to_num(row.get("loss_2001_sampai_tahun_izin_ha")),
+                  to_num(row.get("loss_tahun_izin_sampai_2025_ha")),
+                  to_int(row.get("n_tahun_dari_2001_sampai_tahun_izin")),
+                  to_int(row.get("n_tahun_dari_tahun_izin_sampai_2025")),
+                  to_num(row.get("rate_2001_sampai_tahun_izin_ha_per_year")),
+                  to_num(row.get("rate_tahun_izin_sampai_2025_ha_per_year")),
+                  pre09, n09, rate09,
+                  row.get("ratio_laju_sesudah_vs_sebelum_tahun_izin"), row.get("verdict")))
             n += 1
     conn.commit()
     print(f"     ✓ wiup_temporal: {n} rows", file=sys.stderr)
@@ -458,33 +510,40 @@ def step_kepadatan(conn, csv_path):
     Source: data/kepadatan_penduduk.csv (BPS). Previously this table was ingested
     manually outside the pipeline, so a rebuilt DB silently lost it — now it is a
     first-class, reproducible step keyed off the committed CSV.
+
+    Bentuk LONG (Fase G butir 8, 15 Agu 2026): satu baris per (kode_kabkot,
+    tahun) — eks kolom lebar d2015..d2024. CSV sumber tetap lebar (format BPS);
+    unpivot terjadi di sini saat ingest. Konsumen (server /api/kepadatan,
+    contoh query halaman Database) menyesuaikan.
     """
     print(f"\n[+] Loading kepadatan_penduduk from {csv_path}", file=sys.stderr)
     cur = conn.cursor()
     cur.execute("DROP TABLE IF EXISTS kepadatan_penduduk")
     cur.execute("""
         CREATE TABLE kepadatan_penduduk (
-            kode_kabkot TEXT PRIMARY KEY,
+            kode_kabkot TEXT,
             provinsi TEXT,
             kabupaten TEXT,
             kab_normalized TEXT,
-            d2015 REAL, d2016 REAL, d2017 REAL, d2018 REAL, d2019 REAL,
-            d2020 REAL, d2021 REAL, d2022 REAL, d2023 REAL, d2024 REAL,
+            tahun INTEGER,
+            kepadatan REAL,
             satuan TEXT,
-            sumber TEXT
+            sumber TEXT,
+            PRIMARY KEY (kode_kabkot, tahun)
         )
     """)
-    years = [f"d{y}" for y in range(2015, 2025)]
     n = 0
     with open(csv_path) as f:
         for row in csv.DictReader(f):
-            cur.execute(
-                "INSERT OR REPLACE INTO kepadatan_penduduk VALUES (" + ",".join(["?"] * 16) + ")",
-                (row["kode_kabkot"], row["provinsi"], row["kabupaten"], row["kab_normalized"],
-                 *[to_num(row.get(y)) for y in years], row.get("satuan"), row.get("sumber")))
-            n += 1
+            for tahun in range(2015, 2025):
+                cur.execute(
+                    "INSERT OR REPLACE INTO kepadatan_penduduk VALUES (?,?,?,?,?,?,?,?)",
+                    (row["kode_kabkot"], row["provinsi"], row["kabupaten"],
+                     row["kab_normalized"], tahun, to_num(row.get(f"d{tahun}")),
+                     row.get("satuan"), row.get("sumber")))
+                n += 1
     conn.commit()
-    print(f"     ✓ kepadatan_penduduk: {n} rows", file=sys.stderr)
+    print(f"     ✓ kepadatan_penduduk: {n} rows (long — baris per kab×tahun)", file=sys.stderr)
 
 
 def _match_pairs(conn, pairs):
@@ -580,8 +639,8 @@ def step_indexes(conn):
         "CREATE INDEX IF NOT EXISTS idx_geo_prov ON wiup_geoportal(nama_prov)",
         "CREATE INDEX IF NOT EXISTS idx_geo_kab ON wiup_geoportal(kab_normalized)",
         "CREATE INDEX IF NOT EXISTS idx_geo_usaha ON wiup_geoportal(nama_usaha)",
-        "CREATE INDEX IF NOT EXISTS idx_loss_total ON wiup_loss(total_loss_ha)",
-        "CREATE INDEX IF NOT EXISTS idx_loss_pct ON wiup_loss(loss_pct_of_forest)",
+        "CREATE INDEX IF NOT EXISTS idx_loss_total ON wiup_loss(loss_2001_2025_ha)",
+        "CREATE INDEX IF NOT EXISTS idx_loss_pct ON wiup_loss(loss_2001_2025_pct_hutan2000)",
         "CREATE INDEX IF NOT EXISTS idx_yearly_year ON wiup_loss_yearly(year)",
         "CREATE INDEX IF NOT EXISTS idx_temporal_verdict ON wiup_temporal(verdict)",
         "CREATE INDEX IF NOT EXISTS idx_match_bu ON wiup_match(id_badan_usaha)",
@@ -619,7 +678,8 @@ def step_master_view(conn):
     print(f"\n[7/7] Creating wiup_master view", file=sys.stderr)
     cur = conn.cursor()
     _drop_stale_empty_lapisan_shell(conn, "atribusi_sawit", {
-        "loss_sawit_pra_izin_ha", "loss_sawit_pasca_izin_2021_ha", "loss_pasca_izin_2021_ha"})
+        "loss_sawit_2001_sampai_tahun_izin_ha", "loss_sawit_tahun_izin_sampai_2021_ha", "loss_tahun_izin_sampai_2021_ha",
+        "loss_2009_2021_ha", "loss_sawit_2009_2021_ha"})
     cur.executescript(LAPISAN_SHELLS)
     cur.execute("DROP VIEW IF EXISTS wiup_master")
     cur.execute("""
@@ -639,15 +699,19 @@ def step_master_view(conn):
             g.lokasi,
             l.polygon_area_ha,
             l.forest_2000_ha,
-            l.total_loss_ha,
-            l.loss_pct_of_polygon,
-            l.loss_pct_of_forest,
+            l.loss_2001_2025_ha,
+            l.loss_pct_poligon_2001_2025,
+            l.loss_2001_2025_pct_hutan2000,
+            l.loss_2001_2008_ha, l.hutan_2009_ha, l.loss_2009_2025_ha,
+            l.loss_2009_2025_pct_hutan2009,
             l.tiles AS hansen_tiles,
-            t.loss_pre_iup_ha,
-            t.loss_post_iup_ha,
-            t.rate_pre_ha_per_year,
-            t.rate_post_ha_per_year,
-            t.ratio_post_pre,
+            t.loss_2001_sampai_tahun_izin_ha,
+            t.loss_tahun_izin_sampai_2025_ha,
+            t.loss_2009_sampai_tahun_izin_ha,
+            t.rate_2001_sampai_tahun_izin_ha_per_year,
+            t.rate_tahun_izin_sampai_2025_ha_per_year,
+            t.rate_2009_sampai_tahun_izin_ha_per_year,
+            t.ratio_laju_sesudah_vs_sebelum_tahun_izin,
             t.verdict AS temporal_verdict,
             m.db_match,
             m.minerbaone_url,
@@ -665,21 +729,29 @@ def step_master_view(conn):
             p.tanggal_penetapan,
             p.nama_tahap_kegiatan,
             p.status_cnc,
-            s.loss_2001_2021_ha, s.loss_sawit_tol2th_ha, s.loss_sawit_jeda5th_ha,
-            s.loss_sawit_tahunsama_ha, s.loss_2022_2025_ha,
-            ROUND(s.loss_2001_2021_ha - s.loss_sawit_tol2th_ha, 2)          AS loss_bersih_ha,
+            s.loss_2001_2021_ha, s.loss_sawit_tol2th_2001_2021_ha, s.loss_sawit_jeda5th_2001_2021_ha,
+            s.loss_sawit_tahunsama_2001_2021_ha, s.loss_2022_2025_ha,
+            ROUND(s.loss_2001_2021_ha - s.loss_sawit_tol2th_2001_2021_ha, 2)          AS loss_2001_2021_tanpa_sawit_ha,
             CASE WHEN s.loss_2001_2021_ha > 0
-                 THEN ROUND(100.0 * s.loss_sawit_tol2th_ha / s.loss_2001_2021_ha, 2)
-            END                                                              AS persen_sawit,
+                 THEN ROUND(100.0 * s.loss_sawit_tol2th_2001_2021_ha / s.loss_2001_2021_ha, 2)
+            END                                                              AS persen_sawit_2001_2021,
+            -- Versi jendela era Minerba: penyebutnya loss 2009-2021 (irisan
+            -- era Minerba x jangkauan peta Descals). Berhenti 2021 karena
+            -- Descals berhenti di situ — 2022-2025 TAK terperiksa, dan tak
+            -- boleh masuk penyebut mana pun.
+            s.loss_2009_2021_ha, s.loss_sawit_2009_2021_ha,
+            CASE WHEN s.loss_2009_2021_ha > 0
+                 THEN ROUND(100.0 * s.loss_sawit_2009_2021_ha / s.loss_2009_2021_ha, 2)
+            END                                                              AS persen_sawit_2009_2021,
             -- Task F15: silang dua sumbu pra/pasca-izin × sawit (passthrough +
             -- 2 kolom "bersih" dihitung di sini, satu-satunya sumber definisi).
-            s.loss_sawit_pra_izin_ha, s.loss_sawit_pasca_izin_2021_ha,
-            s.loss_pasca_izin_2021_ha,
+            s.loss_sawit_2001_sampai_tahun_izin_ha, s.loss_sawit_tahun_izin_sampai_2021_ha,
+            s.loss_tahun_izin_sampai_2021_ha,
             CASE WHEN g.iup_year IS NOT NULL AND g.iup_year <= 2022
-                 THEN ROUND(t.loss_pre_iup_ha - s.loss_sawit_pra_izin_ha, 2)
-            END                                                              AS loss_pra_izin_bersih_ha,
-            ROUND(s.loss_pasca_izin_2021_ha - s.loss_sawit_pasca_izin_2021_ha, 2)
-                                                                               AS loss_pasca_izin_2021_bersih_ha,
+                 THEN ROUND(t.loss_2001_sampai_tahun_izin_ha - s.loss_sawit_2001_sampai_tahun_izin_ha, 2)
+            END                                                              AS loss_2001_sampai_tahun_izin_tanpa_sawit_ha,
+            ROUND(s.loss_tahun_izin_sampai_2021_ha - s.loss_sawit_tahun_izin_sampai_2021_ha, 2)
+                                                                               AS loss_tahun_izin_sampai_2021_tanpa_sawit_ha,
             z.kelas  AS kelas_izin, z.bukti AS bukti_izin, z.dasar AS dasar_kelas,
             z.durasi_sk, z.masa_berlaku_diwarisi, z.pra_izin_dominan
         FROM wiup_geoportal g
@@ -717,11 +789,11 @@ def step_demo_queries(conn):
     print("\n[Top 5 konsesi by absolute loss]", file=sys.stderr)
     for r in cur.execute("""
         SELECT nama_usaha, komoditas, nama_prov,
-               ROUND(total_loss_ha, 0) as loss_ha,
-               ROUND(loss_pct_of_forest, 1) as pct
+               ROUND(loss_2001_2025_ha, 0) as loss_ha,
+               ROUND(loss_2001_2025_pct_hutan2000, 1) as pct
         FROM wiup_master
-        WHERE total_loss_ha IS NOT NULL
-        ORDER BY total_loss_ha DESC LIMIT 5
+        WHERE loss_2001_2025_ha IS NOT NULL
+        ORDER BY loss_2001_2025_ha DESC LIMIT 5
     """):
         print(f"  {r[0]:<28} {r[1]:<12} {r[2][:18]:<18} "
               f"{int(r[3]):>8,} ha ({r[4]:>5.1f}%)", file=sys.stderr)
@@ -729,7 +801,7 @@ def step_demo_queries(conn):
     print("\n[Total loss per komoditas]", file=sys.stderr)
     for r in cur.execute("""
         SELECT komoditas, COUNT(*) as n,
-               ROUND(SUM(total_loss_ha), 0) as total_loss
+               ROUND(SUM(loss_2001_2025_ha), 0) as total_loss
         FROM wiup_master
         GROUP BY komoditas
         ORDER BY total_loss DESC LIMIT 5
@@ -739,8 +811,8 @@ def step_demo_queries(conn):
 
     print("\n[Konsesi BERAU COAL full info]", file=sys.stderr)
     for r in cur.execute("""
-        SELECT nama_usaha, sk_iup, ROUND(total_loss_ha, 0),
-               ROUND(loss_pct_of_forest, 1), nib, jenis_badan_usaha,
+        SELECT nama_usaha, sk_iup, ROUND(loss_2001_2025_ha, 0),
+               ROUND(loss_2001_2025_pct_hutan2000, 1), nib, jenis_badan_usaha,
                minerbaone_url, alamat
         FROM wiup_master WHERE nama_usaha = 'BERAU COAL'
     """):

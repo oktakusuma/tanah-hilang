@@ -237,9 +237,19 @@ def main() -> int:
     wide_path = args.outdir / f"batch_{prov_slug}_t{args.threshold}_wide.csv"
     with wide_path.open("w", newline="") as f:
         w = csv.writer(f)
+        # Penamaan jendela EKSPLISIT (Fase B, 12 Agu 2026; disempurnakan 15 Agu
+        # — jendela pembilang masuk nama persen): loss_2001_2025_ha (eks
+        # total_loss_ha — loss Hansen mulai 2001; 2000 = baseline HUTAN),
+        # loss_2001_2025_pct_hutan2000 (eks loss_pct_hutan2000/loss_pct_of_forest),
+        # plus kolom jendela era Minerba (identitas dari deret per-tahun yang
+        # sama). CSV arsip pra-rename tetap terbaca lewat rantai fallback
+        # step_loss (build_combined_db) — arsip tak ditulis ulang.
         headers = ["kode_wiup", "nama_usaha", "komoditas", "kab", "sk_iup",
                    "luas_sk_ha", "polygon_area_ha", "forest_2000_ha",
-                   "total_loss_ha", "loss_pct_of_polygon", "loss_pct_of_forest",
+                   "loss_2001_2025_ha", "loss_pct_poligon_2001_2025",
+                   "loss_2001_2025_pct_hutan2000",
+                   "loss_2001_2008_ha", "hutan_2009_ha", "loss_2009_2025_ha",
+                   "loss_2009_2025_pct_hutan2009",
                    "tiles"]
         for y in range(2001, 2001 + N_YEARS):
             headers.append(f"loss_{y}_ha")
@@ -249,6 +259,10 @@ def main() -> int:
             total = sum(r["loss_per_year_ha"])
             pct_p = 100 * total / r["polygon_area_ha"] if r["polygon_area_ha"] else 0
             pct_f = 100 * total / r["forest_area_2000_ha"] if r["forest_area_2000_ha"] else 0
+            l0108 = sum(r["loss_per_year_ha"][:8])           # 2001-2008
+            l0925 = total - l0108                            # 2009-2025
+            h2009 = r["forest_area_2000_ha"] - l0108
+            pct09 = 100 * l0925 / h2009 if h2009 > 0 else None
             row = [
                 kw, p.get("nama_usaha"), p.get("komoditas"), p.get("nama_kab"),
                 p.get("sk_iup"), p.get("luas_sk"),
@@ -257,6 +271,10 @@ def main() -> int:
                 round(total, 2),
                 round(pct_p, 3),
                 round(pct_f, 3),
+                round(l0108, 2),
+                round(h2009, 2),
+                round(l0925, 2),
+                round(pct09, 3) if pct09 is not None else "",
                 "|".join(r["tiles"]),
             ]
             row.extend(round(x, 2) for x in r["loss_per_year_ha"])
