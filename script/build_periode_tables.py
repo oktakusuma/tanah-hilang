@@ -377,9 +377,10 @@ COLUMN_META = [
     ("backtrack_laju_ringkas", "p75_pct_thn", "Persentil-75 laju %/tahun.", None, None),
     ("backtrack_laju_ringkas", "p90_pct_thn", "Persentil-90 laju %/tahun.", None, None),
     ("backtrack_distribusi", "aturan", "Metode tahun mulai (CITRA/INDIKASI/POLOS) — lihat backtrack_tahunan.aturan.", None, None),
-    ("backtrack_distribusi", "metrik", "luas_sk (luas SK, ha) / luas_sk_tanpa_sawit (luas_sk − kehilangan berujung sawit 2001-2021 di konsesi itu; hanya bila lapisan sawit ada) / ditambang / ditambang_tanpa_sawit. Jendela ditambang IKUT kelompok (redefinisi 15 Agu), DIKLEM per konsesi ke tahun mulainya: P1/P2/P3 = Σ loss tahun ∈ [max(tahun_awal, mulai versi aturan), tahun_akhir] — konsesi yang baru mulai di tengah jendela hanya dihitung sejak mulainya, BUKAN sejak tahun_awal (tanpa-sawit: tahun ∈ [max(tahun_awal, mulai), min(tahun_akhir, 2021)], per tahun max(0, loss−sawit)); SEMUA = sejak-mulai ([mulai, 2025] / tanpa-sawit [mulai, 2021]).", None, None),
+    ("backtrack_distribusi", "metrik", "luas_sk (luas SK, ha — fakta administratif poligon; TIDAK punya varian dikurangi-sawit, keputusan igoen 16 Agu) / ditambang / ditambang_tanpa_sawit (hanya bila lapisan sawit ada). Jendela ditambang IKUT kelompok (redefinisi 15 Agu), DIKLEM per konsesi ke tahun mulainya: P1/P2/P3 = Σ loss tahun ∈ [max(tahun_awal, mulai versi aturan), tahun_akhir] — konsesi yang baru mulai di tengah jendela hanya dihitung sejak mulainya, BUKAN sejak tahun_awal (tanpa-sawit: tahun ∈ [max(tahun_awal, mulai), min(tahun_akhir, 2021)], per tahun max(0, loss−sawit)); SEMUA = sejak-mulai ([mulai, 2025] / tanpa-sawit [mulai, 2021]).", None, None),
     ("backtrack_distribusi", "kelompok", "SEMUA atau P1/P2/P3. Redefinisi 15 Agu: P1/P2/P3 BUKAN lagi kohort iup_year — keanggotaan = KUMULATIF aktif s.d. akhir jendela (mulai versi `aturan` <= 2014/2019/2025), konsisten dgn backtrack_periode_kalender. Himpunan P3 == SEMUA (keduanya mulai <= 2025); yang beda jendela metrik ditambang (lihat `metrik`). Framing kohort-SK murni tersedia via aturan POLOS.", None, None),
     ("backtrack_distribusi", "n", "Konsesi anggota kelompok: mulai versi `aturan` <= akhir jendela kelompok (SEMUA: <= 2025).", None, None),
+    ("backtrack_distribusi", "total_ha", "Total metrik (ha) — Σ nilai seluruh anggota kelompok (ditambah 16 Agu: konteks skala utk mean/median/gini). Jendela nilai per konsesi IKUT aturan kolom `metrik`.", "Σ nilai per konsesi", None),
     ("backtrack_distribusi", "mean_ha", "Rata-rata metrik (ha). Jendela nilai per konsesi IKUT aturan kolom `metrik`: ditambang P1/P2/P3 = [max(tahun_awal, mulai versi aturan), tahun_akhir]; SEMUA = [mulai, 2025] (tanpa-sawit dipotong 2021).", None, None),
     ("backtrack_distribusi", "median_ha", "Median metrik (ha). Jendela nilai per konsesi IKUT aturan kolom `metrik` (klem [max(tahun_awal, mulai), tahun_akhir]; SEMUA sejak-mulai).", None, None),
     ("backtrack_distribusi", "gini", "Indeks Gini metrik (0 = merata, 1 = terkonsentrasi penuh); rumus selisih-berpasangan, NULL bila n<2 atau Σ=0. Jendela nilai per konsesi IKUT aturan kolom `metrik` (klem [max(tahun_awal, mulai), tahun_akhir]; SEMUA sejak-mulai).", "(2Σi·xᵢ)/(nΣx) − (n+1)/n atas x terurut", "scripts/build_laju_izin.py"),
@@ -1671,7 +1672,8 @@ ANALYSIS_STATUS = {
     "periode_signifikansi_bersih": "ARSIP",
     "periode_klasifikasi": "ARSIP",
     "periode_klasifikasi_uji": "ARSIP",
-    "periode_sawit": "ARSIP",
+    # periode_sawit: AKTIF (default) — masih di-serve /api/periode & dirender
+    # blok "uji ketahanan sawit" EraView (koreksi label 16 Agu; audit metodologi).
     "periode_ringkasan_bersih": "ARSIP",
     "periode_tahunan_aktif_bersih": "ARSIP",
     "laju_izin_eventstudy": "ARSIP",
@@ -2237,14 +2239,15 @@ def main() -> int:
          "hitung_laju() per konsesi atas mulai versi aturan; persentil interpolasi linier.",
          "scripts/build_laju_izin.py"),
         ("backtrack_distribusi",
-         "Distribusi ukuran per metode backtrack: mean/median/gini utk luas SK "
-         "(± dikurangi sawit) dan luas ditambang (± dikurangi sawit) — blok 4-5 /era. "
+         "Distribusi ukuran per metode backtrack: total/mean/median/gini utk luas SK "
+         "dan luas ditambang (± dikurangi sawit) — blok 4-5 /era. "
+         "Luas SK TIDAK punya varian dikurangi-sawit (keputusan igoen 16 Agu: sawit "
+         "hanya mengoreksi deforestasi, bukan luas izin — luas SK fakta poligon). "
          "Redefinisi 15 Agu: kelompok P1/P2/P3 = KUMULATIF aktif s.d. akhir jendela "
          "(mulai <= 2014/2019/2025), bukan kohort iup_year.",
          "wiup_geoportal × wiup_loss_yearly × atribusi_sawit_yearly",
-         "gini rumus selisih-berpasangan; luas_sk_tanpa_sawit = luas_sk − Σ sawit 2001-2021 "
-         "konsesi itu (metrik *_tanpa_sawit hanya ditulis bila lapisan sawit ada — data-full "
-         "tanpa Descals tak memuatnya); ditambang P1/P2/P3 = loss DALAM jendela kalender "
+         "gini rumus selisih-berpasangan; ditambang_tanpa_sawit hanya ditulis bila "
+         "lapisan sawit ada — data-full tanpa Descals tak memuatnya; ditambang P1/P2/P3 = loss DALAM jendela kalender "
          "kelompok DIKLEM per konsesi ke tahun mulainya: [max(tahun_awal, mulai versi aturan), "
          "tahun_akhir] (tanpa-sawit s.d. min(tahun_akhir, 2021)) — konsesi yang baru mulai di "
          "tengah jendela dihitung sejak mulainya; ditambang SEMUA = sejak-mulai "
@@ -2270,10 +2273,10 @@ def main() -> int:
          "(tanpa-sawit [mulai, 2021]); pct = 100·loss/hutan_2009_ha.",
          "scripts/build_laju_izin.py"),
         ("backtrack_konsesi_top",
-         "Sepuluh konsesi penyumbang kehilangan terbesar per metode backtrack (peringkat "
-         "disimpan) — sumber slide aktor halaman Statistik.",
+         "Dua puluh lima konsesi penyumbang kehilangan terbesar per metode backtrack "
+         "(peringkat disimpan) — sumber slide aktor halaman Statistik.",
          "laju_izin_konsesi × atribusi_izin_aktif × wiup_geoportal × wiup_loss × wiup_loss_yearly",
-         "Urut menurun loss jendela [mulai aktif versi aturan, 2025], ambil 10 teratas; "
+         "Urut menurun loss jendela [mulai aktif versi aturan, 2025], ambil TOP_N=25 teratas; "
          "nama_usaha/komoditas/nama_prov didenormalisasi utk label chart.",
          "scripts/build_laju_izin.py"),
         ("backtrack_keparahan",

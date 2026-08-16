@@ -648,7 +648,7 @@ walau lapisan belum diisi):
 | `backtrack_stok` | stok izin-aktif per aturan: n, luas, hutan, loss flow & kumulatif sejak 2009. Kolom `grup_tipe` ∈ `kohort` (eks nilai `'periode'`, diganti Fase G) / `penerbit` |
 | `backtrack_sawit` | pangsa sawit per aturan × periode; penyebut = loss `[mulai, 2021]` (batas Descals) |
 | `backtrack_laju_ringkas` | distribusi laju ha/thn & %/thn per aturan × basis × dimensi — sumber angka rekonsiliasi 3 metode (Deteksi Hansen/CITRA 1.227.970 ha, n=825 · INDIKASI 1.038.362 ha, n=818 · POLOS 589.487 ha, n=814) |
-| `backtrack_distribusi` | polarisasi ukuran per aturan: mean/median/**Gini** (rumus selisih-berpasangan) untuk metrik luas_sk & ditambang (± tanpa-sawit) |
+| `backtrack_distribusi` | polarisasi ukuran per aturan: total/mean/median/**Gini** (rumus selisih-berpasangan) untuk metrik `luas_sk` & `ditambang` (± tanpa-sawit). Revisi 16 Agu: kolom `total_ha` ditambah; metrik `luas_sk_tanpa_sawit` DIHAPUS — luas SK fakta administratif poligon, koreksi sawit hanya utk deforestasi |
 | `backtrack_signifikansi` | **24 baris** — Kruskal–Wallis + Mann–Whitney (Holm) antar P1/P2/P3 per aturan × metrik (loss, laju_pct); kosong bila scipy absen. Sejak Fase T membawa **`besar_efek_r`** (rank-biserial `1 − 2·U/(n_a·n_b)`) — terisi hanya di baris `mann_whitney_holm`, NULL di `kruskal_wallis`. Tanda positif = grup A bernilai lebih RENDAH dari grup B |
 
 **Enam tabel penopang "Temuan"** (Fase T, langkah 13 juga — kekokohan

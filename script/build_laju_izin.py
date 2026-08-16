@@ -1228,20 +1228,21 @@ def build_backtrack_tables(con, rows, loss_th, sawit_th, f2000, ada_sawit):
                     "INSERT INTO backtrack_laju_ringkas VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                     (aturan, basis, dimensi, nama) + _stat_row(vha, vpct, tot))
 
-    # ── backtrack_distribusi: mean/median/gini per metrik ukuran ─────────────
+    # ── backtrack_distribusi: total/mean/median/gini per metrik ukuran ───────
     # Blok 4-5 /era. metrik:
-    #   luas_sk               = luas SK konsesi (ha)
-    #   luas_sk_tanpa_sawit   = luas_sk − kehilangan berujung sawit 2001-2021
-    #                           di konsesi itu (satu-satunya ukuran sawit yang
-    #                           kita punya; definisi dicatat utk konfirmasi igoen)
+    #   luas_sk               = luas SK konsesi (ha) — fakta administratif
+    #                           poligon; TIDAK ada varian dikurangi-sawit
+    #                           (keputusan igoen 16 Agu: pengurangan sawit
+    #                           hanya utk deforestasi, bukan luas izin;
+    #                           metrik lama luas_sk_tanpa_sawit dihapus)
     #   ditambang             = loss Hansen DALAM jendela kelompok (lihat bawah)
     #   ditambang_tanpa_sawit = Σ max(0, loss−sawit) pada bagian jendela yang
     #                           terperiksa Descals (≤ 2021)
+    # total_ha ditambah 16 Agu (igoen): jangan cuma mean/median/gini.
     # (gini/med kini didefinisikan di atas fungsi — dipakai juga blok kalender.)
-    sawit_tot = {kode: sum(sw.values()) for kode, sw in sawit_th.items()}
     con.execute("DROP TABLE IF EXISTS backtrack_distribusi")
     con.execute("""CREATE TABLE backtrack_distribusi (
-        aturan TEXT, metrik TEXT, kelompok TEXT, n INTEGER,
+        aturan TEXT, metrik TEXT, kelompok TEXT, n INTEGER, total_ha REAL,
         mean_ha REAL, median_ha REAL, gini REAL,
         PRIMARY KEY (aturan, metrik, kelompok))""")
     for aturan, m_of in mulai_of.items():
@@ -1288,23 +1289,21 @@ def build_backtrack_tables(con, rows, loss_th, sawit_th, f2000, ada_sawit):
                           if ada_sawit else None)
             metrik_vals = {
                 "luas_sk": [geo[k][1] for k in ks],
-                # Tanpa lapisan sawit metrik ini ≡ luas_sk (sawit_tot kosong) —
-                # baris "tanpa_sawit" yang tak pernah memeriksa sawit adalah
-                # klaim bohong, jadi DILEWATI (None), sama spt ditambang_tanpa_
-                # sawit di bawah (item audit 15 Agu: data-full tanpa Descals).
-                "luas_sk_tanpa_sawit": ([max(0.0, geo[k][1] - sawit_tot.get(k, 0.0))
-                                         for k in ks] if ada_sawit else None),
                 "ditambang": dit,
+                # Baris "tanpa_sawit" yang tak pernah memeriksa sawit adalah
+                # klaim bohong, jadi DILEWATI (None) bila lapisan Descals absen
+                # (item audit 15 Agu: data-full tanpa Descals).
                 "ditambang_tanpa_sawit": dit_ts,
             }
             for metrik, vals in metrik_vals.items():
                 if vals is None:
                     continue
                 n = len(vals)
+                total_v = round(sum(vals), 2) if n else None
                 mean_v = round(sum(vals) / n, 2) if n else None
                 med_v = med(vals)
-                con.execute("INSERT INTO backtrack_distribusi VALUES (?,?,?,?,?,?,?)",
-                            (aturan, metrik, kelompok, n, mean_v,
+                con.execute("INSERT INTO backtrack_distribusi VALUES (?,?,?,?,?,?,?,?)",
+                            (aturan, metrik, kelompok, n, total_v, mean_v,
                              None if med_v is None else round(med_v, 2),
                              gini(vals)))
 
