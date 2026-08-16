@@ -418,7 +418,7 @@ terisi; tabel signifikansi butuh scipy, ditulis kosong/NULL bila absen).
 > **Fase G — kolom `status` di `analysis_meta`.** Tiap baris provenansi kini
 > ditandai salah satu dari tiga status, supaya pembaca tahu tabel mana yang
 > masih menopang kesimpulan dan mana yang tinggal jejak:
-> **`AKTIF`** (42 tabel — dipakai kerangka utama) · **`ARSIP`** (10 — dibangun,
+> **`AKTIF`** (43 tabel — dipakai kerangka utama) · **`ARSIP`** (9 — dibangun,
 > tapi sudah tidak dipakai menyimpulkan; mis. keluarga `periode_*_bersih`,
 > `periode_klasifikasi*`, `laju_izin_eventstudy`) · **`PROYEKSI`** (2 —
 > `periode_tahunan_aktif` & `penerbit_tahunan_aktif`: tetap **tabel**, bukan
@@ -688,17 +688,19 @@ ulang kapan pun):
 | `periode_klasifikasi` + `periode_klasifikasi_uji` | sebaran kelas izin per periode + uji Fisher exact antar periode |
 | `periode_signifikansi` (+`_bersih`) | Kruskal–Wallis + Mann–Whitney (Holm) antar P1/P2/P3 |
 | `baseline_tahunan` | deret loss seluruh konsesi 2001–2025 tanpa filter jendela izin (konteks) |
-| `analysis_meta` | **provenance** semua tabel turunan (sumber, metode, skrip) + kolom **`status`** — **54 baris**: AKTIF (42) / ARSIP (10) / PROYEKSI (2) |
-| `column_meta` | **kamus kolom dua arah**: arti + rumus + sumber tiap kolom semua tabel/view — **604 baris menutup 55 tabel**, diverifikasi 100% dua arah terhadap `PRAGMA table_info` oleh `verify_invariants.py` |
+| `analysis_meta` | **provenance** semua tabel turunan (sumber, metode, skrip) + kolom **`status`** — **54 baris**: AKTIF (43) / ARSIP (9) / PROYEKSI (2) |
+| `column_meta` | **kamus kolom dua arah**: arti + rumus + sumber tiap kolom semua tabel/view — **605 baris menutup 55 tabel**, diverifikasi 100% dua arah terhadap `PRAGMA table_info` oleh `verify_invariants.py` |
 
 > **Mana yang masih menopang kesimpulan?** Lihat kolom `status` di
 > `analysis_meta` — jangan menebak dari nama tabel. Yang ber-status **ARSIP**
-> (10, tetap dibangun tapi tak dipakai menyimpulkan): `laju_izin_eventstudy`,
+> (9, tetap dibangun tapi tak dipakai menyimpulkan): `laju_izin_eventstudy`,
 > `periode_ringkasan_bersih`, `periode_tahunan_aktif_bersih`,
-> `periode_komoditas`, `periode_komoditas_bersih`, `periode_sawit`,
+> `periode_komoditas`, `periode_komoditas_bersih`,
 > `periode_klasifikasi`, `periode_klasifikasi_uji`, `periode_signifikansi`,
-> `periode_signifikansi_bersih`. Yang **PROYEKSI** (2):
-> `periode_tahunan_aktif`, `penerbit_tahunan_aktif`. Sisanya (42) **AKTIF**.
+> `periode_signifikansi_bersih`. (`periode_sawit` dipulihkan ke **AKTIF**
+> 16 Agu — masih dirender blok uji ketahanan sawit halaman Komparasi.)
+> Yang **PROYEKSI** (2):
+> `periode_tahunan_aktif`, `penerbit_tahunan_aktif`. Sisanya (43) **AKTIF**.
 
 Asal-usul tiap tabel analisis dapat dilacak langsung:
 ```bash
