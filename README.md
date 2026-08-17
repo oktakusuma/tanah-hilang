@@ -332,7 +332,7 @@ barisnya tetap ditulis untuk audit, tetapi `mulai` **dan**
 ```bash
 python script/build_laju_izin.py --db data/kalimantan.db
 ```
-→ tabel **`laju_izin_konsesi`** / **`laju_izin_eventstudy`** + **15 tabel
+→ tabel **`laju_izin_konsesi`** / **`laju_izin_eventstudy`** + **21 tabel
 `backtrack_*`** + **2 VIEW kompatibilitas** (lihat §5). Pivot "laju dulu,
 periode belakangan": tiap konsesi diberi tahun `mulai` versi **Deteksi Hansen**
 (codename `CITRA` — lihat Kerangka di atas), lalu laju dihitung dua **basis
@@ -363,6 +363,40 @@ sensitivitas. Butuh `atribusi_izin_aktif` (langkah 12).
 >   kabupaten — dulu dihitung di klien. Hasilnya identik; bedanya sekarang
 >   terikat invarian `backtrack-wilayah-rekonsil`.
 
+> **Fase T (16 Agu) — 6 tabel penopang bagian "Temuan" + kolom besar efek.**
+> Gelombang terakhir menambah enam tabel `backtrack_*` yang menjawab
+> pertanyaan "seberapa kokoh kesimpulannya" — bukan mengubah angka utama.
+> Tiganya adalah alat statistik baru yang perlu dikenali:
+> - **Kurva Lorenz + Gini** (`backtrack_lorenz`) — pemusatan kerusakan
+>   berdampingan dengan pemusatan **luas izin**. Ini pembanding yang penting:
+>   kalau kerusakan hanya terpusat sebanyak luas izinnya terpusat, "yang besar
+>   merusak besar" sudah cukup menjelaskan. Pada snapshot commit (aturan
+>   `CITRA`): **10% konsesi teratas menanggung 55,04% kehilangan** sementara
+>   10% konsesi terluas hanya memegang **47,39% luas SK**; `gini_loss`
+>   **0,6935** > `gini_luas` **0,6259** — kerusakan **lebih** terpusat daripada
+>   luas izin.
+> - **Korelasi Spearman** (`backtrack_kesepakatan`, fungsi `spearman()` &
+>   `_rank_rata()` di `build_laju_izin.py` — stdlib, bukan scipy) — kemiripan
+>   deret tahunan 2009–2025 antar pasangan metode, dilaporkan berdampingan
+>   dengan Pearson. Dua-duanya sengaja ditampilkan karena temuannya justru ada
+>   di selisihnya: pada metrik `pct_thn` ketiga metode nyaris sepakat
+>   (Spearman 0,9706–0,9853), tapi pada `loss_ha` CITRA vs POLOS **tak
+>   berkorelasi sama sekali** (Pearson −0,0112 · Spearman −0,1176).
+> - **Besar efek** (`besar_efek_r` di `backtrack_signifikansi`) — rank-biserial
+>   `1 − 2·U/(n_a·n_b)` untuk tiap baris Mann–Whitney/Holm, NULL untuk baris
+>   Kruskal–Wallis. Alasannya lugas: dengan n≈250 per grup, *p* kecil bisa
+>   muncul dari selisih yang tak berarti, jadi **jangan mengutip *p* tanpa
+>   kolom ini**. Rujukan kasar |r|: 0,1 kecil · 0,3 sedang · 0,5 besar.
+>
+> Tiga sisanya melayani pengakuan batas metode & pemetaan aktor:
+> `backtrack_tak_terlihat` (berapa kehilangan yang jatuh **sebelum** jam tiap
+> metode mulai, penyebutnya sengaja bebas metode), `backtrack_selisih`
+> (sebaran jarak `iup_year` − tahun mulai aktif + sebaran tahun bukti mentah),
+> `backtrack_tahun_ekstrem` & `backtrack_top_union` (3 tahun puncak/palung tiap
+> metode; gabungan 10-besar ketiga metode dalam satu baris per konsesi).
+> Ambang aktor juga dinaikkan: `TOP_N = 25` (dulu 10) → `backtrack_konsesi_top`
+> kini **75 baris**.
+
 **14 — Bangun tabel analisis 3 periode kewenangan izin**
 ```bash
 python script/build_periode_tables.py --db data/kalimantan.db
@@ -384,7 +418,7 @@ terisi; tabel signifikansi butuh scipy, ditulis kosong/NULL bila absen).
 > **Fase G — kolom `status` di `analysis_meta`.** Tiap baris provenansi kini
 > ditandai salah satu dari tiga status, supaya pembaca tahu tabel mana yang
 > masih menopang kesimpulan dan mana yang tinggal jejak:
-> **`AKTIF`** (36 tabel — dipakai kerangka utama) · **`ARSIP`** (10 — dibangun,
+> **`AKTIF`** (43 tabel — dipakai kerangka utama) · **`ARSIP`** (9 — dibangun,
 > tapi sudah tidak dipakai menyimpulkan; mis. keluarga `periode_*_bersih`,
 > `periode_klasifikasi*`, `laju_izin_eventstudy`) · **`PROYEKSI`** (2 —
 > `periode_tahunan_aktif` & `penerbit_tahunan_aktif`: tetap **tabel**, bukan
@@ -470,16 +504,37 @@ path JSON langkah 17 (di repo utama path-nya `webapp/src/generated/…`).
   2009–2025 dan cacahnya rekonsil terhadap 56 kab/kota master.
 - **`backtrack-keparahan-rekonsil`** — Σ ember + `n_tanpa_penyebut` = jumlah
   konsesi aktif @2025 di tiap aturan.
-- **`backtrack-top-urut`** — 30 baris `backtrack_konsesi_top` berperingkat
-  menurun rapi di tiap aturan.
+- **`backtrack-top-urut`** — **75 baris** `backtrack_konsesi_top` berperingkat
+  menurun rapi di tiap aturan (25 teratas × 3 aturan; ambangnya dinaikkan dari
+  10 ke 25 pada Fase T).
 - Cek **non-negatif** diperluas ke kelima tabel baru.
+
+**Lima invarian tambahan Fase T** (semuanya *skip*-aman: bila tabel/kolomnya
+absen — mis. DB lama — invarian menulis **WARN**, bukan FAIL, lewat helper
+`tabel_ada()` dan `kolom_ada()` yang baru ditambahkan):
+
+- **`backtrack-tak-terlihat-rekonsil`** — untuk tiap (aturan × kohort SK):
+  `tak_terlihat_ha` + `loss_terhitung_ha` = `loss_2009_2025_ha`. Penyebutnya
+  **bebas metode**, jadi ini yang menjamin persen "tak terlihat" ketiga metode
+  benar-benar sebanding.
+- **`backtrack-semua-bebas-metode`** — baris kohort `SEMUA` harus sama dengan
+  seluruh 825 konsesi sejak 2009 (**1.228.077 ha**) di ketiga aturan; penyebut
+  bebas metode wajib utuh, bukan hasil penjumlahan yang bocor.
+- **`backtrack-selisih-cacah`** — Σ ember tiap (aturan, jenis) = 825 konsesi;
+  tak ada konsesi yang hilang saat dibagi ke ember jarak-tahun.
+- **`backtrack-lorenz`** — kurva Lorenz **monoton naik**, berakhir persis 100%
+  di persentil 100 (toleransi 0,01), dan `gini_loss` / `gini_luas` ∈ [0,1].
+- **`backtrack-korelasi`** — semua `pearson` & `spearman` ∈ [−1,1]; dan
+  `besar_efek_r` ∈ [−1,1] **serta hanya ada di baris `mann_whitney_holm`** —
+  wajib NULL di baris `kruskal_wallis` (uji lintas 3 grup tak punya U
+  berpasangan). Ini yang mencegah besar efek salah dilekatkan pada uji global.
 
 **Gerbang yang harus lolos** pada snapshot yang di-commit (jalankan perintah di
 atas; hasilnya harus sama):
 
 ```
-data/kalimantan.db          → 49 pemeriksaan · 48 PASS · 1 WARN · 0 FAIL
-data-full/ (--light)        → 31 pemeriksaan · 30 PASS · 1 WARN · 0 FAIL
+data/kalimantan.db          → 54 pemeriksaan · 53 PASS · 1 WARN · 0 FAIL
+data-full/ (--light)        → 36 pemeriksaan · 35 PASS · 1 WARN · 0 FAIL
 ```
 
 Satu **WARN** itu memang diharapkan, bukan kegagalan: `identitas-jendela-descals`
@@ -493,6 +548,40 @@ menandai 2 konsesi yang selisih pembulatannya melewati toleransi 0,01 ha
   geoBoundaries. Hasilnya sudah disertakan.
 - **`make_charts.py` + `trend_analysis.py`** — *(opsional)* figur PNG + uji tren
   Mann-Kendall untuk naskah; tidak dipakai web app.
+
+### Replikasi peta di QGIS (opsional)
+
+Bundel ini juga bisa dipakai membangun **peta interaktif di QGIS** yang
+tampilannya sepadan dengan halaman Peta web app (piksel loss Hansen berwarna
+per tahun, jendela era Minerba 2009–2025, outline konsesi, slider tahun).
+Urutannya:
+
+1. **Jalankan pipeline sampai selesai** (bagian 3 di atas) → `data/kalimantan.db`
+   jadi. Raster Hansen sudah terunduh di `data/raster/` sejak langkah 4
+   (`download_hansen.py`).
+2. **Ekspor geojson konsesi dari DB** (= langkah 16):
+   ```bash
+   python script/sync_geojson_from_db.py
+   ```
+   → `data/wiup/kalimantan_with_loss.geojson` (825 konsesi; properti a.l.
+   `iup_year`, `loss_2009_2025_ha`, `loss_2001_ha`…`loss_2025_ha`) — inilah
+   layer poligon untuk QGIS.
+3. **Di QGIS**: gabungkan 4 TIF `lossyear` jadi satu VRT (*Raster →
+   Miscellaneous → Build Virtual Raster*), clip ke poligon konsesi (*GDAL →
+   Clip raster by mask layer*, NoData `255`), lalu jalankan
+   **`script/qgis_loss_slider.py`** dari Python Console QGIS (edit `SRC_NAME`
+   sesuai nama layer). Skrip membuat 17 layer "Loss s.d. 2009…2025" dengan
+   **warna per tahun persis peta web** (tabel `YEAR_HEX` di dalam skrip) —
+   aktifkan *Temporal Controller* rentang 2009-01-01 → 2026-01-01, step
+   1 years, untuk slider tahunnya. Basemap padanan web: XYZ
+   `https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}`;
+   batas kabupaten: `data/boundaries/kalimantan-kabupaten.geojson`.
+
+Yang **tidak** disertakan bundel: raster Hansen (unduh sendiri via
+`download_hansen.py`, langkah 4) dan raster sawit Descals (via
+`fetch_descals.py`) — tanpa Descals, lapisan piksel sawitnya saja yang tak
+bisa direplikasi. Skrip `qgis_loss_slider.py` **byte-identik** dengan repo
+utama; hanya bisa dijalankan **di dalam QGIS** (butuh modul `qgis.core`).
 
 ---
 
@@ -559,8 +648,20 @@ walau lapisan belum diisi):
 | `backtrack_stok` | stok izin-aktif per aturan: n, luas, hutan, loss flow & kumulatif sejak 2009. Kolom `grup_tipe` ∈ `kohort` (eks nilai `'periode'`, diganti Fase G) / `penerbit` |
 | `backtrack_sawit` | pangsa sawit per aturan × periode; penyebut = loss `[mulai, 2021]` (batas Descals) |
 | `backtrack_laju_ringkas` | distribusi laju ha/thn & %/thn per aturan × basis × dimensi — sumber angka rekonsiliasi 3 metode (Deteksi Hansen/CITRA 1.227.970 ha, n=825 · INDIKASI 1.038.362 ha, n=818 · POLOS 589.487 ha, n=814) |
-| `backtrack_distribusi` | polarisasi ukuran per aturan: mean/median/**Gini** (rumus selisih-berpasangan) untuk metrik luas_sk & ditambang (± tanpa-sawit) |
-| `backtrack_signifikansi` | Kruskal–Wallis + Mann–Whitney (Holm) antar P1/P2/P3 per aturan (kosong bila scipy absen) |
+| `backtrack_distribusi` | polarisasi ukuran per aturan: total/mean/median/**Gini** (rumus selisih-berpasangan) untuk metrik `luas_sk` & `ditambang` (± tanpa-sawit). Revisi 16 Agu: kolom `total_ha` ditambah; metrik `luas_sk_tanpa_sawit` DIHAPUS — luas SK fakta administratif poligon, koreksi sawit hanya utk deforestasi |
+| `backtrack_signifikansi` | **24 baris** — Kruskal–Wallis + Mann–Whitney (Holm) antar P1/P2/P3 per aturan × metrik (loss, laju_pct); kosong bila scipy absen. Sejak Fase T membawa **`besar_efek_r`** (rank-biserial `1 − 2·U/(n_a·n_b)`) — terisi hanya di baris `mann_whitney_holm`, NULL di `kruskal_wallis`. Tanda positif = grup A bernilai lebih RENDAH dari grup B |
+
+**Enam tabel penopang "Temuan"** (Fase T, langkah 13 juga — kekokohan
+kesimpulan & pengakuan batas metode):
+
+| Tabel | Isi |
+|---|---|
+| `backtrack_lorenz` | **33 baris** = 3 aturan × 11 titik (persentil 0,10,…,100). `pangsa_loss_teratas_pct` vs `pangsa_luas_teratas_pct` + `gini_loss` / `gini_luas` (diulang tiap baris — sifat sebaran, bukan sifat titik kurva). `n_konsesi` = ⌈persentil% × n⌉, pembulatan **ke atas** |
+| `backtrack_kesepakatan` | **6 baris** = 3 pasangan metode (CITRA–INDIKASI, CITRA–POLOS, INDIKASI–POLOS) × 2 metrik (`loss_ha`, `pct_thn`): `pearson`, `spearman`, `n_irisan_top10`. Spearman dihitung stdlib (Pearson atas peringkat rata-rata), **tidak** butuh scipy |
+| `backtrack_tak_terlihat` | **21 baris** = 3 aturan × 7 kohort (Pra-2009/P1/P2/P3/TANPA_TAHUN_SK/SK_LUAR_JENDELA/**SEMUA**): berapa kehilangan 2009–2025 yang jatuh **sebelum** jam tiap metode mulai. Penyebut `loss_2009_2025_ha` sengaja **bebas metode** supaya persen ketiga metode sebanding |
+| `backtrack_selisih` | **37 baris** — blok `selisih` (6 ember jarak `iup_year` − tahun mulai: tak terdefinisi / ≤0 / 1–2 / 3–5 / 6–10 / 11+), `selisih_ringkas` (p25/median/p75/maks), `klem` (berapa konsesi bertahun-mulai persis 2009 = batas bawah jendela), dan `tahun_bukti` (13 baris, **hanya aturan CITRA**: cacah tahun bukti mentah sebelum diklem) |
+| `backtrack_tahun_ekstrem` | **36 baris** = 3 aturan × 2 metrik × 2 arah (`puncak`/`palung`) × 3 peringkat — tahun tertinggi & terendah deret 2009–2025 tiap metode, disimpan terurut supaya penyaji tak mengurut ulang |
+| `backtrack_top_union` | **20 baris** — gabungan 10-besar KETIGA metode, satu baris per konsesi. `peringkat_citra/indikasi/polos` adalah peringkat **penuh** (1..n seluruh konsesi metode itu, bukan 1..10) supaya "peringkat 1 di Deteksi Hansen, peringkat 94 di Polos" terbaca; `n_top10_metode` = di berapa metode ia masuk 10 besar (hanya **1 konsesi** masuk di ketiganya) |
 
 **Lima tabel irisan halaman Statistik** (Fase C, langkah 13 juga; semua × 3
 aturan, jendela `[mulai versi aturan, 2025]`, penyebut persen = `hutan_2009_ha`):
@@ -569,7 +670,7 @@ aturan, jendela `[mulai versi aturan, 2025]`, penyebut persen = `hutan_2009_ha`)
 |---|---|
 | `backtrack_wilayah` | **186 baris** = 3 aturan × (1 `total` + 5 `provinsi` + 56 `kabupaten`), dibedakan kolom `tingkat`. Kabupaten gabungan dipecah & hektarnya dibagi rata (logika ini pindah dari klien ke pipeline). Baris `tingkat='total'` juga membawa dekomposisi sawit (`loss_sawit_mulai_aktif_sampai_2021_ha`, `persen_sawit_mulai_aktif_sampai_2021`) + `loss_2022_2025_belum_terperiksa_ha` |
 | `backtrack_komoditas_rinci` | 3 × 13 komoditas = **39 baris** (BATUBARA, BAUKSIT(+DMP), EMAS(+DMP), BIJIH BESI(+DMP), BESI, ZIRKON, TIMAH, MANGAN, ANTIMONI, INTAN ALLUVIAL): n konsesi, luas SK, hutan-2009, loss (kotor & tanpa-sawit), % hutan-2009 |
-| `backtrack_konsesi_top` | 3 × 10 = **30 baris** — 10 konsesi teratas per aturan. **Peringkatnya disimpan di basis data** (kolom `peringkat`), bukan diurutkan ulang di penyaji; lengkap dgn `nama_usaha`, `komoditas`, `nama_prov`, `mulai_aktif` |
+| `backtrack_konsesi_top` | 3 × 25 = **75 baris** — 25 konsesi teratas per aturan (`TOP_N` dinaikkan dari 10 ke 25 pada Fase T). **Peringkatnya disimpan di basis data** (kolom `peringkat`), bukan diurutkan ulang di penyaji; lengkap dgn `nama_usaha`, `komoditas`, `nama_prov`, `mulai_aktif` |
 | `backtrack_keparahan` | 3 × 5 ember = **15 baris** — sebaran konsesi menurut % hutan-2009 yang hilang (0–10 / 10–25 / 25–50 / 50–75 / 75%+), plus **`n_tanpa_penyebut`** (konsesi tanpa hutan-2009 → tak bisa dipersenkan; saat ini 0 di ketiga aturan) |
 | `backtrack_zona_bebas` | 3 × 17 tahun (2009–2025) = **51 baris** — per aturan × `year`: `n_kab_total` (56), `n_kab_ada_konsesi`, `n_kab_bersih` + daftar nama (`kab_bersih` / `kota_bersih`) |
 
@@ -587,17 +688,19 @@ ulang kapan pun):
 | `periode_klasifikasi` + `periode_klasifikasi_uji` | sebaran kelas izin per periode + uji Fisher exact antar periode |
 | `periode_signifikansi` (+`_bersih`) | Kruskal–Wallis + Mann–Whitney (Holm) antar P1/P2/P3 |
 | `baseline_tahunan` | deret loss seluruh konsesi 2001–2025 tanpa filter jendela izin (konteks) |
-| `analysis_meta` | **provenance** semua tabel turunan (sumber, metode, skrip) + kolom **`status`** — 48 baris: AKTIF (36) / ARSIP (10) / PROYEKSI (2) |
-| `column_meta` | **kamus kolom dua arah**: arti + rumus + sumber tiap kolom semua tabel/view — 537 baris menutup 49 tabel, diverifikasi 100% dua arah terhadap `PRAGMA table_info` oleh `verify_invariants.py` |
+| `analysis_meta` | **provenance** semua tabel turunan (sumber, metode, skrip) + kolom **`status`** — **54 baris**: AKTIF (43) / ARSIP (9) / PROYEKSI (2) |
+| `column_meta` | **kamus kolom dua arah**: arti + rumus + sumber tiap kolom semua tabel/view — **605 baris menutup 55 tabel**, diverifikasi 100% dua arah terhadap `PRAGMA table_info` oleh `verify_invariants.py` |
 
 > **Mana yang masih menopang kesimpulan?** Lihat kolom `status` di
 > `analysis_meta` — jangan menebak dari nama tabel. Yang ber-status **ARSIP**
-> (10, tetap dibangun tapi tak dipakai menyimpulkan): `laju_izin_eventstudy`,
+> (9, tetap dibangun tapi tak dipakai menyimpulkan): `laju_izin_eventstudy`,
 > `periode_ringkasan_bersih`, `periode_tahunan_aktif_bersih`,
-> `periode_komoditas`, `periode_komoditas_bersih`, `periode_sawit`,
+> `periode_komoditas`, `periode_komoditas_bersih`,
 > `periode_klasifikasi`, `periode_klasifikasi_uji`, `periode_signifikansi`,
-> `periode_signifikansi_bersih`. Yang **PROYEKSI** (2):
-> `periode_tahunan_aktif`, `penerbit_tahunan_aktif`. Sisanya (36) **AKTIF**.
+> `periode_signifikansi_bersih`. (`periode_sawit` dipulihkan ke **AKTIF**
+> 16 Agu — masih dirender blok uji ketahanan sawit halaman Komparasi.)
+> Yang **PROYEKSI** (2):
+> `periode_tahunan_aktif`, `penerbit_tahunan_aktif`. Sisanya (43) **AKTIF**.
 
 Asal-usul tiap tabel analisis dapat dilacak langsung:
 ```bash

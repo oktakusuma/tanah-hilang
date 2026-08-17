@@ -99,6 +99,19 @@ KOLOM_NON_NEGATIF = {
                               "pct_hutan2009_mulai_aktif_sampai_2025"],
     "backtrack_keparahan": ["n_konsesi", "n_tanpa_penyebut"],
     "backtrack_zona_bebas": ["n_kab_ada_konsesi", "n_kab_bersih"],
+    # Penopang bagian "Temuan" (Fase T 16 Agu). Kolom korelasi/gini/besar-efek
+    # SENGAJA tak masuk sini — nilainya memang boleh negatif; rentangnya
+    # diperiksa terpisah di cek_backtrack (backtrack-korelasi / backtrack-lorenz).
+    "backtrack_tak_terlihat": ["n_konsesi", "n_ber_tahun_sk", "n_tak_terlihat_ge1",
+                               "n_tak_terlihat_gt100", "tak_terlihat_ha",
+                               "loss_2009_2025_ha", "loss_terhitung_ha",
+                               "pct_tak_terlihat"],
+    "backtrack_selisih": ["n_konsesi"],
+    "backtrack_lorenz": ["n_konsesi", "pangsa_loss_teratas_pct",
+                         "pangsa_luas_teratas_pct"],
+    "backtrack_top_union": ["loss_2009_2025_ha", "n_top10_metode", "peringkat_citra",
+                            "peringkat_indikasi", "peringkat_polos",
+                            "loss_citra_ha", "loss_indikasi_ha", "loss_polos_ha"],
 }
 TABEL_NON_NEGATIF_LIGHT = ("wiup_loss", "wiup_loss_yearly", "wiup_temporal")
 
@@ -164,6 +177,11 @@ def tabel_ada(con, nama):
     """True bila tabel/view bernama `nama` ada — guard utk DB varian (data-full
     tak punya atribusi_izin_aktif_ringkas dsb.; lihat temuan audit 15 Agu)."""
     return con.execute("SELECT 1 FROM sqlite_master WHERE name = ?", (nama,)).fetchone() is not None
+
+
+def kolom_ada(con, tabel, kolom):
+    """True bila `tabel` punya kolom `kolom` — guard DB generasi lama."""
+    return any(r[1] == kolom for r in con.execute(f"PRAGMA table_info({tabel})"))
 
 
 def satu(con, sql, params=()):
@@ -856,6 +874,158 @@ def cek_backtrack(con, lap):
         else:
             lap.ok("backtrack-keparahan-rekonsil",
                    "Σ ember + tanpa-penyebut = konsesi aktif @2025 (semua aturan)")
+
+    # ── 8) Fase T (16 Agu): tabel penopang bagian "Temuan" ─────────────────
+    # Slide Temuan menyandingkan tiga metode di atas SATU penyebut. Kalau
+    # rekonsiliasi di bawah pecah, halaman itu akan memajang tiga persen yang
+    # penyebutnya diam-diam berbeda — persis kesalahan yang mau dicegah.
+    if not tabel_ada(con, "backtrack_tak_terlihat"):
+        lap.warn("backtrack-tak-terlihat-rekonsil",
+                 "backtrack_tak_terlihat absen — dilewati")
+    else:
+        beda3 = []
+        # (a) identitas per baris: tak_terlihat + terhitung = penyebut.
+        n_pecah = satu(con, """SELECT COUNT(*) FROM backtrack_tak_terlihat
+            WHERE ABS(tak_terlihat_ha + loss_terhitung_ha - loss_2009_2025_ha) > 0.02""")
+        if n_pecah:
+            beda3.append(f"{n_pecah} baris tak_terlihat+terhitung ≠ loss_2009_2025")
+        # (b) Σ kohort (tanpa baris SEMUA) = baris SEMUA, tiap aturan.
+        for aturan, in con.execute(
+                "SELECT DISTINCT aturan FROM backtrack_tak_terlihat").fetchall():
+            for kol in ("tak_terlihat_ha", "loss_2009_2025_ha", "loss_terhitung_ha",
+                        "n_konsesi"):
+                sj = satu(con, f"SELECT SUM({kol}) FROM backtrack_tak_terlihat "
+                               "WHERE aturan=? AND kohort<>'SEMUA'", (aturan,))
+                tot = satu(con, f"SELECT {kol} FROM backtrack_tak_terlihat "
+                                "WHERE aturan=? AND kohort='SEMUA'", (aturan,))
+                if sj is None or tot is None or abs(sj - tot) > 0.02:
+                    beda3.append(f"{aturan}/{kol}: Σ kohort {sj} ≠ SEMUA {tot}")
+        # (c) penyebut WAJIB bebas metode: nilainya sama di ketiga aturan.
+        n_var = satu(con, """SELECT COUNT(*) FROM (
+            SELECT kohort FROM backtrack_tak_terlihat
+            GROUP BY kohort
+            HAVING MAX(loss_2009_2025_ha) - MIN(loss_2009_2025_ha) > 0.02)""")
+        if n_var:
+            beda3.append(f"{n_var} kohort punya penyebut berbeda antar aturan "
+                         "(penyebut harus bebas metode)")
+        # (d) jembatan ke tabel lama: loss_terhitung SEMUA = Σ backtrack_kohort.
+        for aturan, in con.execute(
+                "SELECT DISTINCT aturan FROM backtrack_tak_terlihat").fetchall():
+            a1 = satu(con, "SELECT loss_terhitung_ha FROM backtrack_tak_terlihat "
+                           "WHERE aturan=? AND kohort='SEMUA'", (aturan,))
+            a2 = satu(con, "SELECT SUM(loss_mulai_aktif_sampai_2025_ha) "
+                           "FROM backtrack_kohort WHERE aturan=?", (aturan,))
+            if a1 is None or a2 is None or abs(a1 - a2) > 1.0:
+                beda3.append(f"{aturan}: terhitung {a1} ≠ Σ backtrack_kohort {a2}")
+        if beda3:
+            lap.fail("backtrack-tak-terlihat-rekonsil", "; ".join(beda3))
+        else:
+            tot = satu(con, "SELECT loss_2009_2025_ha FROM backtrack_tak_terlihat "
+                            "WHERE kohort='SEMUA' LIMIT 1")
+            lap.ok("backtrack-tak-terlihat-rekonsil",
+                   f"tak_terlihat + terhitung = penyebut bebas metode "
+                   f"({tot:,.0f} ha) di tiap kohort & aturan")
+
+    # Baris bebas metode aturan='SEMUA' WAJIB = Σ loss 2009-2025 seluruh
+    # konsesi apa adanya. Kalau tidak, penyebut slide Temuan bukan lagi "angka
+    # yang tak bergantung metode" — dan seluruh cerita T1 runtuh.
+    if not tabel_ada(con, "backtrack_tahunan"):
+        pass
+    else:
+        n_semua = satu(con, "SELECT COUNT(*) FROM backtrack_tahunan WHERE aturan='SEMUA'")
+        if not n_semua:
+            lap.warn("backtrack-semua-bebas-metode",
+                     "baris aturan='SEMUA' belum ada (DB generasi lama) — dilewati")
+        else:
+            a = satu(con, "SELECT SUM(loss_ha) FROM backtrack_tahunan "
+                          "WHERE aturan='SEMUA' AND year BETWEEN 2009 AND 2025")
+            b = satu(con, "SELECT SUM(loss_ha) FROM wiup_loss_yearly "
+                          "WHERE year BETWEEN 2009 AND 2025")
+            n_kon = satu(con, "SELECT COUNT(*) FROM wiup_geoportal")
+            n_salah = satu(con, "SELECT COUNT(*) FROM backtrack_tahunan "
+                                "WHERE aturan='SEMUA' AND year >= 2009 AND n_aktif != ?",
+                           (n_kon,))
+            if a is None or b is None or abs(a - b) > 0.5:
+                lap.fail("backtrack-semua-bebas-metode",
+                         f"Σ SEMUA {a} ≠ Σ wiup_loss_yearly 2009-2025 {b}")
+            elif n_salah:
+                lap.fail("backtrack-semua-bebas-metode",
+                         f"{n_salah} tahun n_aktif ≠ {n_kon} konsesi")
+            else:
+                lap.ok("backtrack-semua-bebas-metode",
+                       f"aturan='SEMUA' = seluruh {n_kon} konsesi sejak 2009 "
+                       f"({a:,.0f} ha) — penyebut bebas metode utuh")
+
+    if not tabel_ada(con, "backtrack_selisih"):
+        lap.warn("backtrack-selisih-cacah", "backtrack_selisih absen — dilewati")
+    else:
+        n_kon = satu(con, "SELECT COUNT(*) FROM wiup_geoportal")
+        beda4 = []
+        for aturan, jenis in con.execute(
+            "SELECT DISTINCT aturan, jenis FROM backtrack_selisih "
+            "WHERE jenis IN ('selisih','tahun_bukti')"
+        ).fetchall():
+            s2 = satu(con, "SELECT SUM(n_konsesi) FROM backtrack_selisih "
+                           "WHERE aturan=? AND jenis=?", (aturan, jenis))
+            if s2 != n_kon:
+                beda4.append(f"{aturan}/{jenis}: Σ ember {s2} ≠ {n_kon}")
+        if beda4:
+            lap.fail("backtrack-selisih-cacah", "; ".join(beda4))
+        else:
+            lap.ok("backtrack-selisih-cacah",
+                   f"Σ ember tiap (aturan, jenis) = {n_kon} konsesi — tak ada yang hilang")
+
+    if not tabel_ada(con, "backtrack_lorenz"):
+        lap.warn("backtrack-lorenz", "backtrack_lorenz absen — dilewati")
+    else:
+        # Kurva pangsa kumulatif: tak boleh turun, wajib berakhir 100%, dan
+        # Gini wajib di [0,1] (rumus selisih-berpasangan atas nilai >= 0).
+        turun = satu(con, """SELECT COUNT(*) FROM backtrack_lorenz a
+            JOIN backtrack_lorenz b ON b.aturan = a.aturan AND b.persentil = a.persentil + 10
+            WHERE b.pangsa_loss_teratas_pct < a.pangsa_loss_teratas_pct - 0.001
+               OR b.pangsa_luas_teratas_pct < a.pangsa_luas_teratas_pct - 0.001""")
+        ujung = satu(con, """SELECT COUNT(*) FROM backtrack_lorenz
+            WHERE persentil = 100
+              AND (ABS(pangsa_loss_teratas_pct - 100) > 0.01
+                   OR ABS(pangsa_luas_teratas_pct - 100) > 0.01)""")
+        g_luar = satu(con, """SELECT COUNT(*) FROM backtrack_lorenz
+            WHERE (gini_loss IS NOT NULL AND (gini_loss < 0 OR gini_loss > 1))
+               OR (gini_luas IS NOT NULL AND (gini_luas < 0 OR gini_luas > 1))""")
+        if turun or ujung or g_luar:
+            lap.fail("backtrack-lorenz",
+                     f"{turun} titik turun · {ujung} baris persentil-100 ≠ 100% · "
+                     f"{g_luar} gini di luar [0,1]")
+        else:
+            n_at = satu(con, "SELECT COUNT(DISTINCT aturan) FROM backtrack_lorenz")
+            lap.ok("backtrack-lorenz",
+                   f"kurva monoton naik & berakhir 100%, gini ∈ [0,1] ({n_at} aturan)")
+
+    if not tabel_ada(con, "backtrack_kesepakatan"):
+        lap.warn("backtrack-korelasi", "backtrack_kesepakatan absen — dilewati")
+    else:
+        luar = satu(con, """SELECT COUNT(*) FROM backtrack_kesepakatan
+            WHERE (pearson IS NOT NULL AND (pearson < -1 OR pearson > 1))
+               OR (spearman IS NOT NULL AND (spearman < -1 OR spearman > 1))""")
+        efek = 0
+        salah_null = 0
+        if tabel_ada(con, "backtrack_signifikansi") and kolom_ada(
+                con, "backtrack_signifikansi", "besar_efek_r"):
+            efek = satu(con, """SELECT COUNT(*) FROM backtrack_signifikansi
+                WHERE besar_efek_r IS NOT NULL
+                  AND (besar_efek_r < -1 OR besar_efek_r > 1)""")
+            # besar_efek_r WAJIB ada di mann_whitney_holm & WAJIB NULL di kruskal.
+            salah_null = satu(con, """SELECT COUNT(*) FROM backtrack_signifikansi
+                WHERE (uji='mann_whitney_holm' AND besar_efek_r IS NULL)
+                   OR (uji='kruskal_wallis' AND besar_efek_r IS NOT NULL)""")
+        if luar or efek or salah_null:
+            lap.fail("backtrack-korelasi",
+                     f"{luar} korelasi di luar [−1,1] · {efek} besar_efek_r di luar "
+                     f"[−1,1] · {salah_null} baris besar_efek_r salah tempat")
+        else:
+            n_p = satu(con, "SELECT COUNT(*) FROM backtrack_kesepakatan")
+            lap.ok("backtrack-korelasi",
+                   f"{n_p} baris korelasi ∈ [−1,1]; besar_efek_r ∈ [−1,1] & hanya "
+                   "di baris Mann-Whitney")
 
     if tabel_ada(con, "backtrack_konsesi_top"):
         # Peringkat wajib menurun & tak melebihi total aturannya.
