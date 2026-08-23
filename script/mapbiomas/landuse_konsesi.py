@@ -95,6 +95,98 @@ FOREST = (3, 5, 76)
 MINING, SAWIT, UNOBSERVED = 30, 35, 27
 NCLASS = 256
 
+# ── Kamus Data (Konvensi #4/#5) — ditulis ke analysis_meta + column_meta di
+# dalam mapbiomas.db (skema SAMA dgn kalimantan.db) supaya halaman Database
+# menampilkan provenance & arti kolom utk DB ini juga. Cakupan dua arah
+# diikat guard di bawah (tiap tabel & kolom nyata wajib terdokumentasi).
+_SUMBER_MB = ("MapBiomas Indonesia Koleksi 4.1 (CC BY-SA) — raster nasional "
+              "coverage_lclu & fire_annual, bucket resmi + manifest MD5 "
+              "(scripts/mapbiomas/manifest_*.csv)")
+_SKRIP = "scripts/mapbiomas/landuse_konsesi.py"
+ANALYSIS_META = [
+    ("landuse_konsesi",
+     "Komposisi kelas tutupan/penggunaan lahan MapBiomas per konsesi per tahun "
+     "(2000-2024) — lapisan pemeriksa: baseline land use 2009, 'bekas hutan jadi "
+     "apa', kelas Lubang Tambang & Sawit. BUKAN pengganti angka Hansen.",
+     _SUMBER_MB,
+     "Tabulasi piksel di grid asli EPSG:4326 TANPA resampling; mask poligon "
+     "all_touched=False dirasterisasi sekali per konsesi; luas = jumlah luas "
+     "piksel terkoreksi lintang cos(lat) ala _geo_common (identik pipeline "
+     "Hansen). Universe & geometri = wiup_geoportal kalimantan.db (read-only). "
+     "Validasi silang: CLAUDE/ANALISA-mapbiomas-validasi.md.",
+     _SKRIP, "AKTIF"),
+    ("fire_konsesi",
+     "Luas area terbakar tahunan MapBiomas Fire di dalam tiap konsesi "
+     "(hanya baris > 0). Pemisah 'kehilangan berhimpit kebakaran' vs pembukaan.",
+     _SUMBER_MB,
+     "Mask konsesi sama dgn landuse_konsesi; piksel terbakar = nilai raster "
+     "fire_annual > 0 (PENTING: nilainya KODE KELAS yang terbakar, bukan 1 — "
+     "legenda platform menulis pixelValue=1 tapi isi berkasnya kode kelas).",
+     _SKRIP, "AKTIF"),
+    ("mapbiomas_meta",
+     "Provenance run pipeline (kunci-nilai): sumber, lisensi, sitasi, metode, "
+     "manifest, cakupan tahun, jumlah konsesi, waktu build.",
+     _SUMBER_MB, "Ditulis ulang tiap run oleh skrip yang sama.", _SKRIP, "AKTIF"),
+    ("v_konsesi_ringkas",
+     "VIEW ringkas per konsesi x tahun: hutan/tambang/sawit/teramati/total + "
+     "terbakar — pintu masuk tercepat sebelum menyelam ke landuse_konsesi.",
+     "landuse_konsesi + fire_konsesi (DB ini)",
+     "Agregasi SUM CASE per kelas; ha_teramati (tanpa kelas 27 awan) adalah "
+     "PENYEBUT yang disarankan utk pangsa/share.", _SKRIP, "AKTIF"),
+    ("analysis_meta",
+     "Provenance tiap tabel DB ini (skema sama dgn kalimantan.db).",
+     "-", "Ditulis ulang tiap run.", _SKRIP, "AKTIF"),
+    ("column_meta",
+     "Kamus kolom DB ini: arti + rumus + sumber tiap kolom (cakupan 100% dua "
+     "arah, diikat guard di skrip).", "-", "Ditulis ulang tiap run.", _SKRIP, "AKTIF"),
+]
+_K = "Kode unik WIUP — kunci gabung ke wiup_geoportal/wiup_master di kalimantan.db (JOIN lintas-DB via schema mapbiomas)."
+_Y = "Tahun peta MapBiomas (2000-2024; peta berhenti 2024 — Hansen sampai 2025)."
+COLUMN_META = [
+    ("landuse_konsesi", "kode_wiup", _K, "-", "wiup_geoportal (kalimantan.db)"),
+    ("landuse_konsesi", "year", _Y, "-", _SUMBER_MB),
+    ("landuse_konsesi", "class_code",
+     "Kode kelas legenda resmi C4.1: 3 Formasi Hutan, 5 Mangrove, 76 Hutan Rawa "
+     "Gambut, 10/13 Tumbuhan Non-Hutan, 40 Sawah, 35 Sawit, 9 Kebun Kayu, 21 "
+     "Pertanian Lainnya, 30 Lubang Tambang, 24 Permukiman, 25 Non-Vegetasi "
+     "Lainnya, 31 Tambak, 33 Sungai/Danau/Laut, 27 Citra Tertutup Awan.",
+     "nilai piksel raster apa adanya (tanpa resampling)", _SUMBER_MB),
+    ("landuse_konsesi", "class_name", "Nama kelas resmi berbahasa Indonesia (legenda C4.1).", "konstanta LEGEND di skrip", _SUMBER_MB),
+    ("landuse_konsesi", "kelompok", "Grup level-1 legenda resmi: Hutan / Tumbuhan Non-Hutan / Pertanian / Non-Vegetasi / Tubuh Air / Citra Tertutup Awan.", "konstanta LEGEND di skrip", _SUMBER_MB),
+    ("landuse_konsesi", "pixels", "Jumlah piksel kelas ini di dalam mask poligon konsesi pada tahun itu.", "bincount(arr[mask])", _SKRIP),
+    ("landuse_konsesi", "ha",
+     "Luas kelas ini (hektar) di dalam konsesi pada tahun itu. Kaveat: utk kelas "
+     "30 (Lubang Tambang) perlakukan sbg BATAS BAWAH — akurasi per-kelas tambang "
+     "tidak dipublikasikan MapBiomas.",
+     "SUM(luas piksel) dgn luas per piksel = px_x*px_y*(111320 m/derajat)^2*cos(lat)/10^4 — metode cos-lat identik pipeline Hansen (_geo_common)",
+     _SKRIP),
+    ("fire_konsesi", "kode_wiup", _K, "-", "wiup_geoportal (kalimantan.db)"),
+    ("fire_konsesi", "year", _Y, "-", _SUMBER_MB),
+    ("fire_konsesi", "pixels", "Jumlah piksel terbakar dlm mask konsesi (raster fire_annual bernilai kode kelas terbakar; disaring > 0, BUKAN == 1).", "count(mask & arr>0)", _SKRIP),
+    ("fire_konsesi", "ha_terbakar", "Luas terbakar (ha) di dalam konsesi pada tahun itu.", "SUM(luas piksel cos-lat) utk piksel terbakar", _SKRIP),
+    ("mapbiomas_meta", "kunci", "Nama field provenance (sumber/lisensi/sitasi/metode/manifest/tahun/n_konsesi/fire_disertakan/dibangun).", "-", _SKRIP),
+    ("mapbiomas_meta", "nilai", "Isi field provenance.", "-", _SKRIP),
+    ("v_konsesi_ringkas", "kode_wiup", _K, "-", "landuse_konsesi"),
+    ("v_konsesi_ringkas", "year", _Y, "-", "landuse_konsesi"),
+    ("v_konsesi_ringkas", "ha_hutan", "Luas kelas hutan alam (Formasi Hutan + Mangrove + Hutan Rawa Gambut). BEDA definisi dgn 'tutupan pohon' Hansen — jangan disandingkan sbg angka setara.", "SUM(ha) utk class_code IN (3,5,76)", "landuse_konsesi"),
+    ("v_konsesi_ringkas", "ha_tambang", "Luas Lubang Tambang (kelas 30) — batas bawah (akurasi kelas tak terpublikasi).", "SUM(ha) utk class_code = 30", "landuse_konsesi"),
+    ("v_konsesi_ringkas", "ha_sawit", "Luas Sawit (kelas 35) — stok sawit, beda besaran dari 'loss jadi sawit' Descals.", "SUM(ha) utk class_code = 35", "landuse_konsesi"),
+    ("v_konsesi_ringkas", "ha_teramati", "Luas semua kelas KECUALI 27 (awan) — penyebut yang disarankan utk pangsa, supaya share tak bergerak hanya karena tutupan awan.", "SUM(ha) utk class_code != 27", "landuse_konsesi"),
+    ("v_konsesi_ringkas", "ha_total", "Luas semua kelas > 0 (termasuk awan) — referensi; mendekati luas poligon (median 99,77%).", "SUM(ha)", "landuse_konsesi"),
+    ("v_konsesi_ringkas", "ha_terbakar", "Luas terbakar tahun itu (0 bila tak ada baris fire).", "COALESCE(MAX(fire_konsesi.ha_terbakar), 0) via LEFT JOIN", "fire_konsesi"),
+    ("analysis_meta", "nama_tabel", "Nama tabel/view yang dideskripsikan.", "-", _SKRIP),
+    ("analysis_meta", "deskripsi", "Apa isinya & utk apa.", "-", _SKRIP),
+    ("analysis_meta", "sumber", "Dari data apa tabel dibangun.", "-", _SKRIP),
+    ("analysis_meta", "metode", "Bagaimana dihitung (ringkas).", "-", _SKRIP),
+    ("analysis_meta", "script", "Skrip pembangunnya.", "-", _SKRIP),
+    ("analysis_meta", "status", "AKTIF/ARSIP/PROYEKSI (di DB ini semuanya AKTIF).", "-", _SKRIP),
+    ("column_meta", "nama_tabel", "Tabel pemilik kolom.", "-", _SKRIP),
+    ("column_meta", "nama_kolom", "Nama kolom.", "-", _SKRIP),
+    ("column_meta", "deskripsi", "Arti kolom.", "-", _SKRIP),
+    ("column_meta", "rumus", "Rumus/derivasi bila ada.", "-", _SKRIP),
+    ("column_meta", "sumber", "Asal datanya.", "-", _SKRIP),
+]
+
 
 def parse_tahun(s: str) -> list[int]:
     out: list[int] = []
@@ -326,6 +418,35 @@ def main(argv=None) -> int:
             "dibangun": dt.datetime.now().astimezone().isoformat(timespec="seconds"),
         }
         con.executemany("INSERT INTO mapbiomas_meta VALUES (?,?)", meta.items())
+
+        # Kamus Data (skema identik kalimantan.db) + guard cakupan dua arah.
+        con.executescript("""
+            DROP TABLE IF EXISTS analysis_meta;
+            DROP TABLE IF EXISTS column_meta;
+            CREATE TABLE analysis_meta (
+                nama_tabel TEXT PRIMARY KEY, deskripsi TEXT, sumber TEXT, metode TEXT,
+                script TEXT, status TEXT NOT NULL DEFAULT 'AKTIF'
+                CHECK (status IN ('AKTIF','ARSIP','PROYEKSI')));
+            CREATE TABLE column_meta (
+                nama_tabel TEXT, nama_kolom TEXT, deskripsi TEXT, rumus TEXT, sumber TEXT,
+                PRIMARY KEY (nama_tabel, nama_kolom));
+        """)
+        con.executemany("INSERT INTO analysis_meta VALUES (?,?,?,?,?,?)", ANALYSIS_META)
+        con.executemany("INSERT INTO column_meta VALUES (?,?,?,?,?)", COLUMN_META)
+        objek = [r[0] for r in con.execute(
+            "SELECT name FROM sqlite_master WHERE type IN ('table','view') "
+            "AND name NOT LIKE 'sqlite_%'")]
+        didok = {r[0] for r in con.execute("SELECT nama_tabel FROM analysis_meta")}
+        for t in objek:
+            if t not in didok:
+                raise SystemExit(f"analysis_meta belum mencakup: {t}")
+            nyata = {r[1] for r in con.execute(f'PRAGMA table_info("{t}")')}
+            terdok = {r[0] for r in con.execute(
+                "SELECT nama_kolom FROM column_meta WHERE nama_tabel=?", (t,))}
+            if nyata != terdok:
+                raise SystemExit(
+                    f"column_meta {t} tak sinkron: kurang={sorted(nyata-terdok)} "
+                    f"lebih={sorted(terdok-nyata)}")
         con.commit()
 
         # Invarian akhir: jumlah piksel per konsesi konstan antar tahun
