@@ -549,6 +549,48 @@ menandai 2 konsesi yang selisih pembulatannya melewati toleransi 0,01 ha
 - **`make_charts.py` + `trend_analysis.py`** — *(opsional)* figur PNG + uji tren
   Mann-Kendall untuk naskah; tidak dipakai web app.
 
+### Lapisan MapBiomas (opsional — pemeriksa ketiga)
+
+Folder `script/mapbiomas/` mereplikasi lapisan pemeriksa **MapBiomas Indonesia
+Koleksi 4.1** (tutupan/penggunaan lahan tahunan 30 m, 2000–2024): baseline land
+use 2009, komposisi kelas per konsesi per tahun (termasuk kelas **Lubang
+Tambang** dan **Sawit**), dan luas terbakar tahunan per konsesi.
+
+> **Lisensi**: MapBiomas Indonesia dirilis **CC BY-SA** (ShareAlike; beda dari
+> Hansen/Descals yang CC BY 4.0). Karena itu hasilnya ditulis ke **basis data
+> TERPISAH** `data/mapbiomas.db` — jangan dicampur ke `kalimantan.db`.
+> Sitasi: *MapBiomas Indonesia – Collection 4.1 time-series maps of land-use
+> and land-cover, accessed on [tanggal] via https://plataforma.mapbiomas.org*
+
+```bash
+# 1) Unduh raster nasional (terverifikasi ukuran + MD5 dari manifest):
+python3 script/mapbiomas/fetch_mapbiomas_lulc.py            # 25 tahun, ~5,25 GB
+python3 script/mapbiomas/fetch_mapbiomas_fire.py            # area terbakar, ~286 MB
+python3 script/mapbiomas/fetch_mapbiomas_lulc.py --check    # verifikasi ulang MD5
+
+# 2) Panel land use per KONSESI -> data/mapbiomas.db
+#    (butuh kalimantan.db hasil pipeline utama — universe & geometri 825 WIUP
+#     dibaca read-only dari tabel wiup_geoportal)
+python3 script/mapbiomas/landuse_konsesi.py
+```
+
+Metode `landuse_konsesi.py` sengaja meniru pipeline Hansen: dihitung di grid
+asli EPSG:4326 **tanpa resampling**, luas per piksel koreksi lintang cos(lat)
+(konstanta dari `_geo_common.py`), mask poligon dirasterisasi sekali per
+konsesi (`all_touched=False`). Keluaran: `landuse_konsesi` (kode_wiup × tahun ×
+kelas → piksel, ha), `fire_konsesi`, provenance `mapbiomas_meta`, dan view
+`v_konsesi_ringkas` (ha_hutan/ha_tambang/ha_sawit/ha_teramati/ha_terbakar).
+
+Catatan metodologis penting:
+- **Encoding raster fire**: nilai piksel = kode kelas LULC yang terbakar
+  (bukan `1` seperti tertulis di legenda platform) — saring dengan `> 0`.
+- **Akurasi kelas tambang tidak dipublikasikan** MapBiomas (validasi resmi
+  hanya Koleksi 2, 6 kelas); perlakukan luas tambang sebagai batas bawah.
+- Angka MapBiomas ≠ angka Hansen by design (definisi hutan berbeda; neto vs
+  bruto) — posisinya lapisan pemeriksa, bukan pengganti.
+- Skrip lain di folder (`01_clip_*`, `02_panel_zonal.py` per-kabupaten,
+  `03_firstyear_layers.py`, `gen_mapbiomas_tiles.py` tile web) opsional.
+
 ### Replikasi peta di QGIS (opsional)
 
 Bundel ini juga bisa dipakai membangun **peta interaktif di QGIS** yang
