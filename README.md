@@ -32,6 +32,9 @@ Tanah Hilang/
 │   └── boundaries/
 │       └── kalimantan-kabupaten.geojson #   batas kabupaten (geoBoundaries)
 ├── script/                              # pipeline pengolahan (raw → jadi)
+│   ├── mapbiomas/                       #   lapisan pemeriksa MapBiomas (opsional)
+│   └── gee/                             #   komposit citra sezaman 2009–2018 (opsional,
+│                                        #   latar peta — bukan sumber angka)
 └── README.md                            # berkas ini
 ```
 
@@ -590,6 +593,77 @@ Catatan metodologis penting:
   bruto) — posisinya lapisan pemeriksa, bukan pengganti.
 - Skrip lain di folder (`01_clip_*`, `02_panel_zonal.py` per-kabupaten,
   `03_firstyear_layers.py`, `gen_mapbiomas_tiles.py` tile web) opsional.
+
+### Citra dasar sezaman 2009–2018 (opsional — latar peta, bukan sumber angka)
+
+Folder `script/gee/` membangun **komposit citra satelit sezaman** untuk latar
+halaman Peta. Ini **bukan** bagian pipeline angka: tak satu pun hitungan tesis
+berasal darinya. Gunanya menjawab pertanyaan visual "seperti apa lokasi ini saat
+izinnya terbit" — sebelum ada ini, menggeser slider ke 2009 tetap menampilkan
+citra masa kini, sehingga konsesi tampak sudah terbuka padahal saat itu hutan.
+
+> **Prasyarat**: akun **Google Earth Engine** sendiri (tier nonkomersial gratis
+> cukup) + kunci *service account* di `.secrets/gee-sa.json`. Bundel ini tidak
+> menyertakan kunci apa pun. Juga butuh `data/kalimantan.db` hasil pipeline
+> utama — geometri 825 WIUP dibaca read-only untuk menentukan petak mana yang
+> perlu resolusi terdalam.
+>
+> **Lisensi sumber**: Landsat Collection 2 (USGS/NASA) domain publik; Copernicus
+> Sentinel-2 (ESA) terbuka. Atribusi wajib disertakan bila gambarnya dipakai:
+> *USGS/NASA Landsat 5/7/8 Collection 2 · Copernicus Sentinel-2 (ESA) ·
+> Cloud Score+ · Google Earth Engine*.
+
+```bash
+pip install earthengine-api          # belum ada di requirements.txt
+
+# Percobaan satu petak dulu (GeoTIFF, cepat, untuk menilai mutu):
+python3 script/gee/komposit_landsat.py  --tahun 2011 --bbox 117.30,0.25,117.80,0.75
+python3 script/gee/komposit_sentinel.py --tahun 2017 --bbox 117.30,0.25,117.80,0.75
+
+# Bangun tile XYZ untuk web app (berjam-jam; boleh paralel per tahun):
+python3 script/gee/gen_landsat_tiles.py --sumber landsat  --tahun 2009-2015
+python3 script/gee/gen_landsat_tiles.py --sumber sentinel --tahun 2016-2018
+```
+
+Dua sumber, dipilih menurut ketersediaan:
+
+| Tahun | Sumber | Resolusi | Zoom tile |
+|---|---|---|---|
+| 2009–2015 | Landsat 5/7/8 Collection 2 L2 | 30 m | z6–z11 se-Kalimantan + z12 sekitar konsesi |
+| 2016–2018 | Sentinel-2 L1C + Cloud Score+ | 10 m | z6–z12 se-Kalimantan + z13 sekitar konsesi |
+
+Catatan metodologis penting:
+
+- **Tiap tahun adalah komposit ±1 tahun**, bukan potret satu tahun — "2011"
+  berarti gabungan 2010–2012, dan label di peta menyebutnya terang-terangan.
+  Kalimantan terlalu berawan untuk komposit setahun: diuji di Sangatta, 2011
+  sendirian menyisakan **8% piksel bolong**, jendela 2010–2012 **nol**.
+- **Persentil 35, bukan median.** Awan selalu lebih terang dari permukaan, jadi
+  mengambil nilai di bawah median otomatis membuang piksel berawan tipis yang
+  lolos dari masker. Diuji: median menyisakan bercak awan, p25 terlalu gelap.
+- **2016–2018 terpaksa memakai Sentinel-2 L1C** (puncak atmosfer) karena tingkat
+  permukaan (L2A) praktis tak ada di Kalimantan pada tahun-tahun itu — 0 scene
+  (2016), 0 (2017), 5 (2018) di petak uji. Kabut atmosfernya ditangani dengan
+  menaikkan **titik hitam ke 0,05** pada peregangan tampilan. Ini
+  **peregangan tampilan, BUKAN koreksi atmosfer** — cukup untuk latar visual,
+  tak boleh dipakai sebagai masukan hitungan.
+- **Penyeragaman warna antar-sensor sengaja TIDAK dilakukan.** Koefisien Roy
+  dkk. (2016) yang lazim dipakai diturunkan untuk Collection 1, sedangkan
+  tutorial resmi Earth Engine menyatakan koefisien itu tidak disarankan untuk
+  Collection 2 yang kami pakai. Akibatnya nada warna sedikit berubah di 2013
+  (Landsat 8 masuk) dan 2016 (Sentinel-2 masuk).
+- **Laut ditutup dengan band `datamask` Hansen v1.13** (1 = daratan). Tanpa itu
+  perairan ikut terkomposit — air memantulkan sangat sedikit sehingga hasilnya
+  nyaris hitam dan menutupi peta dasar dengan kotak hitam. Memakai Hansen,
+  bukan dataset air lain, membuat batas darat-laut konsisten dengan sumber
+  angka tesis. *(Percobaan yang gagal dan jangan diulang: JRC Global Surface
+  Water — cakupannya tak sampai laut lepas.)*
+- **Resolusi berubah sepanjang seri peta**: 30 m (2009–2015) → 10 m (2016–2018)
+  → 0,3–0,5 m (mode terkini, citra Esri). Jangan menyimpulkan "bukaan makin
+  jelas" dari citra yang memang makin tajam.
+
+Potongan setara untuk dijalankan langsung di GEE Code Editor (tanpa server) ada
+di `docs/panduan-qgis.md` §1c pada repo utama.
 
 ### Replikasi peta di QGIS (opsional)
 
