@@ -1,0 +1,4 @@
+berkas,n_fitur,byte,md5,tanggal_unduh,url,where
+ippkh_eksplorasi.geojson,22,799372,ca9653774ff5561b3b74767a4f6723e8,2026-08-31,https://geoportal.esdm.go.id/gis1/rest/services/Izin_Pinjam_Pakai_Kawasan_Hutan/MapServer/0/query,"kode_prov IN (61,62,63,64,65)"
+ippkh_operasi.geojson,397,17948883,7ee8aa5ab5cf5fdb8d86bde886cc726e,2026-08-31,https://geoportal.esdm.go.id/gis1/rest/services/Izin_Pinjam_Pakai_Kawasan_Hutan/MapServer/1/query,"kode_prov IN (61,62,63,64,65)"
+overlay_hutan.geojson,3962,33756746,d3e6a13ac0fb887bcbb36f4a01f45150,2026-08-31,https://geoportal.esdm.go.id/gis1/rest/services/Overlay_WIUP_vs_Kawasan_Hutan/MapServer/0/query,pulau='KALIMANTAN'

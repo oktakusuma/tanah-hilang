@@ -1,0 +1,380 @@
+#!/usr/bin/env python3
+# STATUS  : ARSIP — dashboard-stats.json skema v2 (kunci periode/atribusi/lapisan/kohort)
+# CATATAN : pengganti: pipeline/09_sajikan.py (skema SKEMA.md §9: minerba, lengkap, keyakinan, umur, ippkh, sankey_2001_2024, registri)
+# LABEL   : 3 Sep 2026 (bundel publik disetel ke pipeline v3 `pipeline/bangun.sh` — lihat README §7; jangan dihapus, tidak dipanggil bangun.sh)
+"""Generate ONE source of truth for every hardcoded number in the dashboard.
+
+Queries the built SQLite DBs and writes webapp/src/generated/dashboard-stats.json.
+The frontend imports that JSON for all narrative figures (Metodologi, StoryIntro,
+LoginPage, …) so a data refresh = re-run this script → every page updates.
+Pages that already read the live /api are unaffected.
+
+Jalankan TERAKHIR (setelah build_periode_tables — langkah 17/17 rescrape/process.sh):
+  python scripts/gen_dashboard_stats.py
+"""
+from __future__ import annotations
+
+import argparse
+import json
+import sqlite3
+from datetime import datetime, timezone
+from pathlib import Path
+
+# Sibling-script import (pola sama dgn gen_descals_tiles.py -> attribution_sawit):
+# satu-satunya sumber definisi to_periode() -- JANGAN duplikasi jadi CASE WHEN SQL
+# di sini, itu jebakan lama (iup_year kosong/di luar jendela 1998-2025 -> harus
+# None, bukan diam-diam jatuh ke P3).
+from build_periode_tables import to_periode  # noqa: E402
+
+
+def snapshot(db_path: Path) -> dict:
+    """Aggregate figures for one DB (default-minerba or full)."""
+    conn = sqlite3.connect(db_path)
+    conn.row_factory = sqlite3.Row
+
+    def one(sql):
+        return conn.execute(sql).fetchone()[0]
+
+    wiup = one("SELECT COUNT(*) FROM wiup_master")
+    loss = one("SELECT COALESCE(SUM(loss_2001_2025_ha),0) FROM wiup_master")
+    # Jendela era Minerba (Fase B — fokus permukaan web, keputusan igoen 12 Agu)
+    loss09 = one("SELECT COALESCE(SUM(loss_2009_2025_ha),0) FROM wiup_master")
+    hutan09 = one("SELECT COALESCE(SUM(hutan_2009_ha),0) FROM wiup_master")
+    forest = one("SELECT COALESCE(SUM(forest_2000_ha),0) FROM wiup_master")
+    matched = one("SELECT COUNT(*) FROM wiup_match WHERE match_strategy IS NOT NULL")
+
+    per_komoditas = [
+        {"nama": r["komoditas"], "n": r["n"], "loss_ha": round(r["loss"] or 0)}
+        for r in conn.execute(
+            "SELECT komoditas, COUNT(*) n, SUM(loss_2001_2025_ha) loss "
+            "FROM wiup_master GROUP BY komoditas ORDER BY n DESC")
+    ]
+    per_provinsi = [
+        {"nama": r["nama_prov"], "n": r["n"], "loss_ha": round(r["loss"] or 0)}
+        for r in conn.execute(
+            "SELECT nama_prov, COUNT(*) n, SUM(loss_2001_2025_ha) loss "
+            "FROM wiup_master GROUP BY nama_prov ORDER BY loss DESC")
+    ]
+    match_strategy = {
+        (r["s"] or "unmatched"): r["n"]
+        for r in conn.execute(
+            "SELECT match_strategy s, COUNT(*) n FROM wiup_match GROUP BY match_strategy")
+    }
+    temporal = {
+        r["v"]: r["n"]
+        for r in conn.execute(
+            "SELECT temporal_verdict v, COUNT(*) n FROM wiup_master "
+            "WHERE temporal_verdict IS NOT NULL GROUP BY temporal_verdict")
+    }
+    conn.close()
+
+    return {
+        "wiup": wiup,
+        "loss_ha": round(loss),
+        "forest_2000_ha": round(forest),
+        "loss_pct_forest": round(100.0 * loss / forest, 1) if forest else 0.0,
+        "loss_2009_2025_ha": round(loss09),
+        "hutan_2009_ha": round(hutan09),
+        # Kunci JSON = nama kolom DB pasca-rename 15 Agu (jendela pembilang
+        # masuk nama) — konsumen: HeroStats/LoginPage/StoryIntro via lib/stats.
+        "loss_2009_2025_pct_hutan2009": round(100.0 * loss09 / hutan09, 1) if hutan09 else 0.0,
+        "matched": matched,
+        "unmatched": wiup - matched,
+        "match_pct": round(100.0 * matched / wiup, 1) if wiup else 0.0,
+        "n_provinsi": len(per_provinsi),
+        "n_komoditas": len(per_komoditas),
+        "per_komoditas": per_komoditas,
+        "per_provinsi": per_provinsi,
+        "match_strategy": match_strategy,
+        "temporal": temporal,
+    }
+
+
+def kohort(db_path: Path) -> dict:
+    """Kohort kerangka 3-periode: berapa konsesi masuk analisis vs dikeluarkan.
+
+    Definisi TUNGGAL-nya to_periode() (import dari build_periode_tables) — jendela
+    izin 1998-2025; konsesi tanpa iup_year & ber-iup_year di luar jendela DIBUANG.
+    Dihitung dari DB (bukan ditulis tangan) supaya kalimat "814 dari 825" di
+    Metodologi tak bisa basi diam-diam saat data di-refresh.
+    """
+    conn = sqlite3.connect(db_path)
+    years = [r[0] for r in conn.execute("SELECT iup_year FROM wiup_geoportal")]
+    conn.close()
+    return {
+        "n_total": len(years),
+        "n_analisis": sum(1 for y in years if to_periode(y) is not None),
+        "n_tanpa_tahun": sum(1 for y in years if y is None),
+        # Di luar jendela izin 1998-2025 (saat ini semuanya iup_year 2026).
+        "n_iup_2026": sum(1 for y in years if y == 2026),
+        "n_luar_jendela": sum(1 for y in years if y is not None and to_periode(y) is None),
+    }
+
+
+def periode(db_path: Path) -> list[dict] | None:
+    """Ringkasan 3 periode (+ Pra-2009) dari tabel periode_ringkasan × periode_slope.
+
+    Sumber & metode: scripts/build_periode_tables.py (provenance: analysis_meta).
+    None bila tabel belum dibangun (pipeline lama) — frontend wajib toleran.
+    """
+    conn = sqlite3.connect(db_path)
+    conn.row_factory = sqlite3.Row
+    try:
+        rows = conn.execute(
+            "SELECT r.periode, r.rentang_tahun, r.n, r.luas_total_ha, r.luas_median_ha, "
+            "       r.loss_2001_2025_ha, r.pct_poligon_2001_2025, r.pct_akselerasi, "
+            "       r.r_luas_loss_2001_2025, "
+            "       s.slope_ha_per_year, s.peak_year "
+            "FROM periode_ringkasan r LEFT JOIN periode_slope s ON s.periode = r.periode "
+            "ORDER BY CASE r.periode WHEN 'P1' THEN 1 WHEN 'P2' THEN 2 WHEN 'P3' THEN 3 ELSE 4 END"
+        ).fetchall()
+    except sqlite3.OperationalError:
+        conn.close()
+        return None
+    conn.close()
+    return [
+        {
+            "periode": r["periode"],
+            "rentang_tahun": r["rentang_tahun"],
+            "n": r["n"],
+            "luas_total_ha": round(r["luas_total_ha"]),
+            "luas_median_ha": round(r["luas_median_ha"]),
+            "loss_2001_2025_ha": round(r["loss_2001_2025_ha"]),
+            "pct_poligon_2001_2025": r["pct_poligon_2001_2025"],
+            "pct_akselerasi": r["pct_akselerasi"],
+            "r_luas_loss_2001_2025": r["r_luas_loss_2001_2025"],
+            "slope_ha_per_year": r["slope_ha_per_year"],
+            "peak_year": r["peak_year"],
+            "is_footnote": r["periode"] == "Pra-2009",
+        }
+        for r in rows
+    ]
+
+
+def lapisan(db_path: Path) -> dict | None:
+    """Blok atribusi sawit (Descals) × klasifikasi izin (perpanjangan).
+
+    Sumber: tabel atribusi_sawit (scripts/attribution_sawit.py) & klasifikasi_izin
+    (scripts/klasifikasi_perpanjangan.py). None bila KEDUA tabel kosong — frontend
+    wajib toleran (sembunyikan blok). Bila hanya salah satu terisi, kunci dari
+    tabel yang kosong tetap muncul dengan nilai None/{} — UI menyembunyikan bagian itu.
+    """
+    conn = sqlite3.connect(db_path)
+    conn.row_factory = sqlite3.Row
+
+    n_atribusi = conn.execute("SELECT COUNT(*) FROM atribusi_sawit").fetchone()[0]
+    n_klasifikasi = conn.execute("SELECT COUNT(*) FROM klasifikasi_izin").fetchone()[0]
+    if n_atribusi == 0 and n_klasifikasi == 0:
+        conn.close()
+        return None
+
+    out: dict = {}
+    if n_atribusi:
+        row = conn.execute(
+            "SELECT SUM(loss_2001_2021_ha) a, SUM(loss_sawit_tol2th_2001_2021_ha) b, "
+            "       SUM(loss_sawit_jeda5th_2001_2021_ha) c, SUM(loss_sawit_tahunsama_2001_2021_ha) d, "
+            "       SUM(loss_2022_2025_ha) e, "
+            "       SUM(loss_2009_2021_ha) f, SUM(loss_sawit_2009_2021_ha) g "
+            "FROM atribusi_sawit"
+        ).fetchone()
+        loss_2001_2021 = row["a"]
+        loss_tol2th = row["b"]
+        out["loss_2001_2021_ha"] = loss_2001_2021
+        out["loss_sawit_tol2th_2001_2021_ha"] = loss_tol2th
+        out["loss_sawit_jeda5th_2001_2021_ha"] = row["c"]
+        out["loss_sawit_tahunsama_2001_2021_ha"] = row["d"]
+        out["loss_2022_2025_ha"] = row["e"]
+        # Versi jendela era Minerba (fokus analisis): penyebut loss 2009-2021.
+        out["persen_sawit_2009_2021"] = (
+            round(100.0 * row["g"] / row["f"], 1) if row["f"] else None
+        )
+        if loss_2001_2021 is not None and loss_tol2th is not None:
+            out["loss_2001_2021_tanpa_sawit_ha"] = loss_2001_2021 - loss_tol2th
+            out["persen_sawit_2001_2021"] = (
+                round(100.0 * loss_tol2th / loss_2001_2021, 1) if loss_2001_2021 else None
+            )
+        else:
+            out["loss_2001_2021_tanpa_sawit_ha"] = None
+            out["persen_sawit_2001_2021"] = None
+    else:
+        out["loss_2001_2021_ha"] = None
+        out["loss_sawit_tol2th_2001_2021_ha"] = None
+        out["loss_sawit_jeda5th_2001_2021_ha"] = None
+        out["loss_sawit_tahunsama_2001_2021_ha"] = None
+        out["loss_2022_2025_ha"] = None
+        out["persen_sawit_2009_2021"] = None
+        out["loss_2001_2021_tanpa_sawit_ha"] = None
+        out["persen_sawit_2001_2021"] = None
+
+    out["n_kelas"] = {
+        r["kelas"]: r["n"]
+        for r in conn.execute(
+            "SELECT kelas, COUNT(*) n FROM klasifikasi_izin GROUP BY kelas")
+    }
+    out["n_bukti_kuat"] = conn.execute(
+        "SELECT COUNT(*) FROM klasifikasi_izin WHERE bukti = 'KUAT'").fetchone()[0]
+    # Pecahan bukti KHUSUS kelas PERPANJANGAN (KUAT vs INDIKASI) — dipakai narasi
+    # "Bagaimana metode Indikasi bekerja" di Metodologi. Beda dgn n_bukti_kuat
+    # (seluruh tabel): di data saat ini kebetulan sama, tapi jangan diandalkan.
+    out["n_bukti_perpanjangan"] = {
+        r["bukti"]: r["n"]
+        for r in conn.execute(
+            "SELECT bukti, COUNT(*) n FROM klasifikasi_izin "
+            "WHERE kelas = 'PERPANJANGAN' GROUP BY bukti")
+    }
+    # Rentang masa berlaku SK (tahun) kelas PERPANJANGAN bukti INDIKASI —
+    # dihitung dari DB supaya kalimat "durasi SK 2-19 th" tak bisa basi.
+    r = conn.execute(
+        "SELECT MIN(durasi_sk) mn, MAX(durasi_sk) mx FROM klasifikasi_izin "
+        "WHERE kelas = 'PERPANJANGAN' AND bukti = 'INDIKASI'").fetchone()
+    out["durasi_sk_perpanjangan_indikasi"] = (
+        {"min": r["mn"], "max": r["mx"]} if r["mn"] is not None else None
+    )
+
+    # Pangsa "diduga perpanjangan" per periode kewenangan — dihitung di sini (bukan
+    # ditulis tangan di frontend/docstring) supaya selalu sinkron dgn DB. Periode
+    # via to_periode() (import, BUKAN CASE WHEN SQL duplikat) dari build_periode_tables,
+    # sumber tunggal definisi P1/P2/P3/Pra-2009 & jendela iup_year 1998-2025.
+    # Pra-2009 sengaja DIKECUALIKAN (catatan kaki di kerangka 3-periode, konsisten dgn
+    # periode_ringkasan) -- hanya P1/P2/P3 yang dilaporkan.
+    periode_n: dict[str, dict[str, int]] = {}
+    for r in conn.execute(
+        "SELECT z.kelas kelas, g.iup_year iup_year FROM klasifikasi_izin z "
+        "JOIN wiup_geoportal g ON g.kode_wiup = z.kode_wiup"
+    ):
+        p = to_periode(r["iup_year"])
+        if p is None or p == "Pra-2009":
+            continue
+        d = periode_n.setdefault(p, {"total": 0, "perpanjangan": 0})
+        d["total"] += 1
+        if r["kelas"] == "PERPANJANGAN":
+            d["perpanjangan"] += 1
+    out["pangsa_perpanjangan_periode"] = {
+        p: round(100.0 * d["perpanjangan"] / d["total"], 1)
+        for p, d in periode_n.items()
+        if d["total"] > 0
+    }
+
+    conn.close()
+    out["tile_descals"] = (db_path.resolve().parent.parent / "data" / "tiles" / "descals").is_dir()
+    return out
+
+
+def atribusi(db_path: Path) -> dict | None:
+    """Blok atribusi izin aktif (jendela era Minerba 2009-2025) — BEKAL flip
+    angka utama nanti; hero SAAT INI tetap snapshot()['loss_ha'] (1.603.251).
+    None bila tabel belum ada (DB lama) — frontend menyembunyikan blok."""
+    conn = sqlite3.connect(db_path)
+    ada = conn.execute(
+        "SELECT 1 FROM sqlite_master WHERE type='table' "
+        "AND name='atribusi_izin_aktif_ringkas'").fetchone()
+    if not ada:
+        conn.close()
+        return None
+    out: dict = {}
+    for aturan, loss, pct, n in conn.execute(
+        "SELECT aturan, loss_mulai_aturan_sampai_2025_ha, pct_hutan2009, n_kohort "
+        "FROM atribusi_izin_aktif_ringkas"):
+        # Kunci JSON = nama aturan pasca-selaras Fase G (tanpa_atribusi/
+        # indikasi/polos — eks x0/b/d; aturan c diarsipkan 15 Agu). Jangkar
+        # jendela = kunci aturan pada objek induknya.
+        out[aturan.lower()] = {"loss_mulai_aturan_sampai_2025_ha": loss,
+                               "pct_hutan2009": pct, "n_kohort": n}
+    # Total metode CITRA (angka utama Komparasi) — dari backtrack_laju_ringkas
+    # (scripts/build_laju_izin.py), baris agregat semua konsesi basis Hansen
+    # penuh (kotor). Dipakai Metodologi utk menaruh INDIKASI di antara POLOS
+    # dan CITRA tanpa menulis angkanya tangan. Opsional (DB lama tanpa tabel).
+    ada_bt = conn.execute(
+        "SELECT 1 FROM sqlite_master WHERE type='table' "
+        "AND name='backtrack_laju_ringkas'").fetchone()
+    if ada_bt:
+        row = conn.execute(
+            "SELECT n, total_loss_ha FROM backtrack_laju_ringkas "
+            "WHERE aturan='CITRA' AND basis='kotor' AND dimensi='semua'").fetchone()
+        if row:
+            out["laju_citra"] = {
+                "loss_mulai_aktif_sampai_2025_ha": row[1], "n": row[0]}
+    f2000 = conn.execute(
+        "SELECT COALESCE(SUM(forest_2000_ha),0) FROM wiup_loss").fetchone()[0]
+    loss0108 = conn.execute(
+        "SELECT COALESCE(SUM(loss_ha),0) FROM wiup_loss_yearly "
+        "WHERE year BETWEEN 2001 AND 2008").fetchone()[0]
+    out["hutan2009_ha"] = round(f2000 - loss0108, 2)
+    out["loss_pra2009_ha"] = round(loss0108, 2)
+    conn.close()
+    return out
+
+
+def registry(db_path: Path) -> dict:
+    """Company-registry figures (shared, same in both DBs) + snapshot struktur
+    DB (jumlah tabel/view/indeks, ukuran berkas) — dipakai §05 Metodologi
+    ("Dari basis data ke dashboard"). Snapshot ini BERUBAH kalau objek DB
+    berubah (tabel ditambah/dihapus, indeks baru) — makanya dihitung di sini,
+    bukan ditulis literal di komponen React (F17a r1: '28 tabel · 40 indeks'
+    basi setelah drop exposure_kabupaten, dan hitungan indeks ternyata sudah
+    lama salah).
+    """
+    conn = sqlite3.connect(db_path)
+    bu = conn.execute("SELECT COUNT(*) FROM badan_usaha").fetchone()[0]
+    izin = conn.execute("SELECT COUNT(*) FROM perizinan").fetchone()[0]
+    n_tabel = conn.execute(
+        "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'"
+    ).fetchone()[0]
+    n_view = conn.execute(
+        "SELECT COUNT(*) FROM sqlite_master WHERE type='view' AND name NOT LIKE 'sqlite_%'"
+    ).fetchone()[0]
+    n_indeks = conn.execute(
+        "SELECT COUNT(*) FROM sqlite_master WHERE type='index' AND name NOT LIKE 'sqlite_%'"
+    ).fetchone()[0]
+    conn.close()
+    db_size_mb = round(db_path.stat().st_size / (1024 * 1024))
+    return {
+        "badan_usaha": bu, "perizinan": izin,
+        "n_tabel": n_tabel, "n_view": n_view, "n_indeks": n_indeks,
+        "db_size_mb": db_size_mb,
+    }
+
+
+def main() -> int:
+    root = Path(__file__).resolve().parent.parent
+    ap = argparse.ArgumentParser(description=__doc__)
+    ap.add_argument("--default-db", type=Path, default=root / "data" / "kalimantan.db")
+    ap.add_argument("--full-db", type=Path, default=root / "data-full" / "kalimantan.db")
+    ap.add_argument("--out", type=Path,
+                    default=root / "webapp" / "src" / "generated" / "dashboard-stats.json")
+    args = ap.parse_args()
+
+    out = {
+        "_comment": "AUTO-GENERATED oleh scripts/gen_dashboard_stats.py — JANGAN edit manual. "
+                    "Jalankan ulang setelah refresh data.",
+        "generated_at": datetime.now(timezone.utc).strftime("%Y-%m-%d"),
+        "period": "2001-2025",
+        "default": snapshot(args.default_db),         # minerba (batubara + logam)
+        "registry": registry(args.default_db),        # badan_usaha / perizinan (utuh)
+        "kohort": kohort(args.default_db),            # kohort kerangka 3-periode (814/825)
+    }
+    per = periode(args.default_db)                    # 3 periode kewenangan (+Pra-2009)
+    if per:
+        out["periode"] = per
+    lap = lapisan(args.default_db)                     # atribusi sawit × klasifikasi izin
+    if lap is not None:
+        out["lapisan"] = lap
+    atr = atribusi(args.default_db)                    # atribusi izin aktif (bekal flip)
+    if atr is not None:
+        out["atribusi"] = atr
+    if args.full_db.exists():
+        out["full"] = snapshot(args.full_db)          # minerba + galian C
+
+    args.out.parent.mkdir(parents=True, exist_ok=True)
+    args.out.write_text(json.dumps(out, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    d = out["default"]
+    print(f"Wrote {args.out}")
+    print(f"  default(minerba): {d['wiup']} WIUP · {d['loss_ha']:,} ha loss · "
+          f"{d['loss_pct_forest']}% · match {d['matched']}/{d['wiup']} ({d['match_pct']}%)")
+    if "full" in out:
+        print(f"  full: {out['full']['wiup']} WIUP · {out['full']['loss_ha']:,} ha loss")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
