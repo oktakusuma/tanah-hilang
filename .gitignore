@@ -7,21 +7,57 @@ __pycache__/
 .venv/
 venv/
 
-# Data BESAR (diunduh oleh skrip, jangan disertakan)
+# ── Data BESAR (diunduh oleh skrip prasyarat, jangan disertakan) ────────────────
+# 8 tile Hansen GFC-2025 v1.13 (~1,4 GB) — scripts/download_hansen.py
 data/raster/
-*.tif
+# raster MapBiomas C4.1 (~5,25 GB) & unduhan besar lain
 data/external/
+# tile XYZ (latar peta / kelas MapBiomas) — turunan murni
 data/tiles/
+*.tif
+# geojson kehutanan Geoportal (~51 MB) — scripts/fetch_geoportal_hutan.py.
+# MANIFEST.csv-nya SENGAJA di-commit (jumlah fitur + MD5 + tanggal + kueri).
+data/geoportal/*.geojson
 
-# Data JADI / OUTPUT pipeline (dihasilkan oleh skrip — bukan bagian paket mentah)
-data/kalimantan.db
-data/kalimantan.db-*
-data-full/
+# ── Data JADI / OUTPUT pipeline (dihasilkan skrip — bukan bagian paket mentah) ──
+# keluaran pipeline v3: himpunan minerba (825) & lengkap (1.765)
+data/tanah-hilang.db
+data/tanah-hilang.db-*
+data/tanah-hilang-lengkap.db
+data/tanah-hilang-lengkap.db-*
+# folder kerja pipeline v3 (DB uji per langkah)
+data/.bangun/
+# batch_*.csv, temporal_iup_analysis.csv, dll
 data/analysis/
 data/figures/
+# keluaran pipeline/09_sajikan.py
+data/wiup/kalimantan_with_loss.geojson
+data/dashboard-stats.json
+# dashboard-stats.json ditulis ke sini bila --stats tak diberikan
+webapp/
 
-# Data panel PENELITIAN (belum dipublikasikan) — sengaja TIDAK disertakan
+# ── Keluaran & basis data pipeline ARSIP v2 (lihat README §7) ──────────────────
+data/kalimantan.db
+data/kalimantan.db-*
+data/mapbiomas.db
+data/mapbiomas.db-*
+data/arsip/
+data-full/
+
+# ── SQLite ancillary ───────────────────────────────────────────────────────────
+*.db-shm
+*.db-wal
+*.db-journal
+
+# ── Data panel PENELITIAN (belum dipublikasikan) — sengaja TIDAK disertakan ────
 stata/
 
-# Setelan lokal Claude Code (bukan bagian bundel)
+# ── Kredensial (kunci service account Earth Engine dll) — JANGAN di-commit ─────
+.secrets/
+.env
+.env.*
+*.pem
+*.key
+
+# ── Setelan lokal Claude Code (bukan bagian bundel) ────────────────────────────
 .claude/
