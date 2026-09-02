@@ -259,6 +259,12 @@ sitasi). Itulah sebabnya turunan Hansen (CC BY 4.0) dan turunan MapBiomas (**CC 
 | view `v_konsesi` | gabungan semua di atas per konsesi — satu sumber untuk daftar & panel detail | — |
 | `sumber`, `bangun`, `analysis_meta`, `column_meta` | provenansi: sumber & lisensi, jejak build (tanggal, versi pipeline, commit git, **sidik jari geometri konsesi**), deskripsi + rumus tiap tabel dan tiap kolom | — |
 
+**Metode pengukuran MapBiomas** (sengaja meniru pipeline Hansen supaya keduanya
+sebanding): dihitung di **grid asli EPSG:4326 tanpa resampling**, luas per piksel dikoreksi
+lintang cos(lat) memakai konstanta dari `scripts/_geo_common.py`, dan topeng poligon
+dirasterisasi **sekali per konsesi** dengan `all_touched=False` (piksel ikut hanya bila
+pusatnya di dalam poligon) lalu dipakai ulang untuk seluruh tahun.
+
 Melacak asal-usul angka apa pun:
 
 ```bash
@@ -380,6 +386,11 @@ jendela 2001–2024. Konsekuensinya:
 
 - **Descals dicabut** dari analisis. "Sawit" sekarang berarti kelas 35 MapBiomas.
   `attribution_sawit.py`, `fetch_descals.py`, `gen_descals_tiles.py` = ARSIP.
+- **Kebakaran tidak dibawa ke v3.** `mapbiomas/landuse_konsesi.py` (ARSIP) juga membangun
+  `fire_konsesi`, tetapi tabel itu tak pernah dibaca siapa pun sehingga pipeline v3
+  melewatinya. Bila Anda menjalankan skrip arsip itu, catat jebakannya: **nilai piksel
+  raster fire = kode kelas LULC yang terbakar**, bukan `1` seperti tertulis di legenda
+  platform — saring dengan `> 0`.
 - Keluarga `backtrack_*` / `periode_*` / `atribusi_izin*` **dibekukan sebagai pembanding**
   (`build_laju_izin.py`, `build_periode_tables.py`, `build_atribusi_izin.py` = ARSIP).
   Penerus konsepnya adalah `keyakinan_pra_izin` (langkah 08).
