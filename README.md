@@ -354,9 +354,12 @@ Catatan metodologis yang penting dan mahal dipelajari:
    `https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}`;
    batas kabupaten: `data/boundaries/kalimantan-kabupaten.geojson`.
 
-`scripts/qgis_loss_slider.py` membuat layer slider tahunan otomatis, tetapi berstatus
-**ARSIP**: kosakata & jendelanya masih 2009–2025 dan kolomnya `loss_*`. Sesuaikan sendiri
-ke jendela 2001–2024 bila dipakai. Skrip itu hanya jalan di dalam QGIS (butuh `qgis.core`).
+`scripts/qgis_loss_slider.py` membuat 24 layer "Loss s.d. 2001 … 2024" otomatis, dengan
+warna per tahun yang disalin persis dari peta web (`MIN_VALUE = 1`, `MAX_VALUE = 24`,
+`OPACITY = 0.70`) — jendelanya sudah sesuai tesis. Ganti `SRC_NAME` ke nama layer hasil
+clip Anda, lalu jalankan dari Python Console QGIS dan aktifkan *Temporal Controller*
+rentang 2001-01-01 → 2025-01-01, step 1 tahun. Skrip ini hanya jalan di dalam QGIS
+(butuh modul `qgis.core`).
 
 ---
 

@@ -1,17 +1,14 @@
-# STATUS  : ARSIP — layer slider QGIS 'Loss s.d. 2009...2025' (jendela & kosakata v2)
-# CATATAN : hanya jalan di dalam QGIS (butuh qgis.core); jendela tesis kini 2001-2024 — sesuaikan sendiri bila dipakai
-# LABEL   : 3 Sep 2026 (bundel publik disetel ke pipeline v3 `pipeline/bangun.sh` — lihat README §7; jangan dihapus, tidak dipanggil bangun.sh)
 # Bikin slider tahun untuk raster Hansen lossyear di QGIS — replika tampilan
-# halaman /peta webapp (warna per tahun, jendela era Minerba, opasitas piksel).
+# halaman /peta webapp (warna per tahun, jendela tesis 2001-2024, opasitas piksel).
 #
 # Cara pakai:
 #   1. Buka QGIS, pastikan layer VRT/clip lossyear sudah ada di panel Layers.
 #   2. Ganti SRC_NAME di bawah sesuai nama layer-mu (persis seperti di panel).
 #   3. Plugins -> Python Console -> ikon "Show Editor" -> buka file ini -> Run.
 #   4. View -> Panels -> Temporal Controller -> klik ikon play (Animated
-#      temporal navigation) -> set range 2009-01-01 s.d. 2026-01-01, step
+#      temporal navigation) -> set range 2001-01-01 s.d. 2025-01-01, step
 #      1 years. Slider tahun muncul; geser = pindah tahun (padanan slider
-#      "Potret Data" di peta web; posisi 2025 = "Agregat 2009-2025").
+#      "Potret Data" di peta web; posisi 2024 = "Agregat 2001-2024").
 #
 # WARNA PER TAHUN disalin persis dari peta web:
 # webapp/src/components/map/HansenLossLayer.tsx (YEAR_LUT) — interpolasi linier
@@ -33,14 +30,17 @@ SRC_NAME = "lossyear"          # <-- GANTI: nama layer VRT/clip di panel Layers
 GROUP_NAME = "Loss per tahun (slider)"
 CUMULATIVE = True              # True = tampilkan loss s.d. tahun N (kayak web)
                                # False = hanya loss pada tahun N itu saja
-MIN_VALUE = 9                  # 9 = mulai 2009 (era Minerba — peta web TIDAK
-                               # menggambar piksel 2001-2008). Set 1 kalau mau
-                               # jendela penuh 2001-2025.
-OPACITY = 0.85                 # padanan slider "Piksel" 85% di panel peta web
+MIN_VALUE = 1                  # 1 = mulai 2001 (jendela tesis 2001-2024,
+                               # sama seperti peta web).
+MAX_VALUE = 24                 # 24 = berhenti 2024; kode 25 (piksel 2025) TIDAK
+                               # digambar — di luar jendela tesis, seperti web.
+OPACITY = 0.70                 # padanan slider opasitas layer Hansen di seksi
+                               # LAYER peta web (bawaan 70%)
 
 # Nilai piksel Hansen 1..25 = tahun hilang 2001..2025 -> warna PERSIS peta web
-# (YEAR_LUT di HansenLossLayer.tsx). 2009 (#e96dbb) juga titik awal gradien
-# legenda di MapView.tsx.
+# (YEAR_LUT di HansenLossLayer.tsx). 2001 (#fccee7) juga titik awal gradien
+# legenda di MapView.tsx; entri 25 (2025) disimpan hanya sebagai dokumentasi
+# ramp — tidak dipakai selama MAX_VALUE = 24.
 YEAR_HEX = {
     1: "#fccee7",   # 2001
     2: "#fac2e2",   # 2002
@@ -66,7 +66,7 @@ YEAR_HEX = {
     22: "#8c155b",  # 2022
     23: "#831153",  # 2023
     24: "#790c4a",  # 2024
-    25: "#700842",  # 2025
+    25: "#700842",  # 2025 (tak dipakai — di luar jendela tesis)
 }
 
 project = QgsProject.instance()
@@ -85,7 +85,8 @@ if old:
 group = root.insertGroup(0, GROUP_NAME)
 
 first_year = 2000 + MIN_VALUE
-for n in range(MIN_VALUE, 26):
+last_year = 2000 + MAX_VALUE
+for n in range(MIN_VALUE, MAX_VALUE + 1):
     year = 2000 + n
     layer = QgsRasterLayer(src.source(), f"Loss s.d. {year}", src.providerType())
     if not layer.isValid():
@@ -96,7 +97,7 @@ for n in range(MIN_VALUE, 26):
         QgsPalettedRasterRenderer.Class(v, QColor(YEAR_HEX[v]), str(2000 + v))
         for v in range(lo, n + 1)
     ]
-    # Nilai di luar daftar kelas (0 = tidak ada loss; 1-8 saat MIN_VALUE=9;
+    # Nilai di luar daftar kelas (0 = tidak ada loss; 25 = piksel 2025 di luar jendela;
     # NoData 255 hasil clip) otomatis transparan — sama dgn web yang hanya
     # mewarnai piksel ber-loss di jendela tahunnya.
     layer.setRenderer(QgsPalettedRasterRenderer(layer.dataProvider(), 1, classes))
@@ -121,8 +122,8 @@ for n in range(MIN_VALUE, 26):
     group.addLayer(layer)
 
 print(
-    f"Beres: {26 - MIN_VALUE} layer ({first_year}-2025) dibuat di grup "
-    f"'{GROUP_NAME}'.\n"
+    f"Beres: {MAX_VALUE - MIN_VALUE + 1} layer ({first_year}-{last_year}) dibuat "
+    f"di grup '{GROUP_NAME}'.\n"
     "Buka View -> Panels -> Temporal Controller, klik ikon play, "
-    f"set range {first_year}-01-01 s.d. 2026-01-01 dengan step 1 years."
+    f"set range {first_year}-01-01 s.d. {last_year + 1}-01-01 dengan step 1 years."
 )
