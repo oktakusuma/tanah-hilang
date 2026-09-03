@@ -1,6 +1,7 @@
 # STATUS  : ARSIP — perakit data/kalimantan.db v2 (identitas + pengukuran)
 # CATATAN : pengganti: pipeline/01_identitas.py (konsesi, konsesi_registri, kepadatan_penduduk) + pipeline/02_hansen.py
 # LABEL   : 3 Sep 2026 (bundel publik disetel ke pipeline v3 `pipeline/bangun.sh` — lihat README §7; jangan dihapus, tidak dipanggil bangun.sh)
+
 """
 Build combined master SQLite database for thesis analysis.
 
@@ -354,6 +355,10 @@ def _create_loss_tables(cur, if_not_exists=False):
             -- Jendela PEMBILANG masuk nama (rename 15 Agu; eks loss_pct_hutan2000):
             -- persen yang tanpa jendela terbaca "sepanjang masa", padahal 2001-2025.
             loss_2001_2025_pct_hutan2000 REAL,
+            -- Jendela TESIS 2001-2024 (proposal v0.3.2, igoen 1 Sep 2026;
+            -- identitas eksak dari kolom per-tahun — 2024 batas MapBiomas):
+            loss_2001_2024_ha REAL,
+            loss_2001_2024_pct_hutan2000 REAL,
             -- Jendela era Minerba (identitas eksak dari wiup_loss_yearly):
             loss_2001_2008_ha REAL,
             hutan_2009_ha REAL,
@@ -398,6 +403,16 @@ def _create_temporal_table(cur, if_not_exists=False):
             rate_2009_sampai_tahun_izin_ha_per_year REAL,
             ratio_laju_sesudah_vs_sebelum_tahun_izin TEXT,
             verdict TEXT,
+            -- Jendela tesis 2001-2024 (pivot proposal v0.3.2, 2 Sep 2026).
+            -- Kolom *_sampai_2025 di atas = ARSIP pra-pivot (pembanding;
+            -- masih dibaca keluarga backtrack_*). Permukaan web inti membaca
+            -- kolom *_2024 ini. iup_year 2025 → kolom 2024 NULL,
+            -- verdict_jendela_2024 = izin_setelah_jendela_2024.
+            loss_tahun_izin_sampai_2024_ha REAL,
+            n_tahun_dari_tahun_izin_sampai_2024 INTEGER,
+            rate_tahun_izin_sampai_2024_ha_per_year REAL,
+            ratio_laju_sesudah_vs_sebelum_jendela_2024 TEXT,
+            verdict_jendela_2024 TEXT,
             FOREIGN KEY (kode_wiup) REFERENCES wiup_geoportal(kode_wiup)
         )
     """)
@@ -429,15 +444,19 @@ def step_loss(conn, batch_csv, only_wiup=None):
             f2000 = to_num(row.get("forest_2000_ha"))
             l0108 = sum(to_num(row.get(f"loss_{y}_ha"), 0) or 0 for y in range(2001, 2009))
             l0925 = sum(to_num(row.get(f"loss_{y}_ha"), 0) or 0 for y in range(2009, 2026))
+            # Jendela tesis 2001-2024 (proposal v0.3.2) — identitas eksak.
+            l0124 = sum(to_num(row.get(f"loss_{y}_ha"), 0) or 0 for y in range(2001, 2025))
+            pct0124 = round(100.0 * l0124 / f2000, 2) if f2000 and f2000 > 0 else None
             h2009 = (f2000 - l0108) if f2000 is not None else None
             pct2009 = round(100.0 * l0925 / h2009, 2) if h2009 and h2009 > 0 else None
             cur.execute("""
                 INSERT OR REPLACE INTO wiup_loss
                 (kode_wiup, polygon_area_ha, forest_2000_ha, loss_2001_2025_ha,
                  loss_pct_poligon_2001_2025, loss_2001_2025_pct_hutan2000,
+                 loss_2001_2024_ha, loss_2001_2024_pct_hutan2000,
                  loss_2001_2008_ha, hutan_2009_ha, loss_2009_2025_ha,
                  loss_2009_2025_pct_hutan2009, tiles)
-                VALUES (?,?,?,?,?,?,?,?,?,?,?)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
             """, (kw,
                   to_num(row.get("polygon_area_ha")),
                   f2000,
@@ -448,6 +467,8 @@ def step_loss(conn, batch_csv, only_wiup=None):
                   # (hitung ulang berjam-jam; batas rename = lapisan DB, DECISIONS).
                   to_num(row.get("loss_2001_2025_pct_hutan2000",
                                  row.get("loss_pct_hutan2000", row.get("loss_pct_of_forest")))),
+                  round(l0124, 2),
+                  pct0124,
                   round(l0108, 2),
                   round(h2009, 2) if h2009 is not None else None,
                   round(l0925, 2),
@@ -492,7 +513,7 @@ def step_temporal(conn, csv_path, only_wiup=None):
             elif iy is not None:
                 pre09, n09 = 0.0, 0
             cur.execute("""
-                INSERT OR REPLACE INTO wiup_temporal VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
+                INSERT OR REPLACE INTO wiup_temporal VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
             """, (row["kode_wiup"], iy,
                   to_num(row.get("loss_2001_sampai_tahun_izin_ha")),
                   to_num(row.get("loss_tahun_izin_sampai_2025_ha")),
@@ -501,7 +522,12 @@ def step_temporal(conn, csv_path, only_wiup=None):
                   to_num(row.get("rate_2001_sampai_tahun_izin_ha_per_year")),
                   to_num(row.get("rate_tahun_izin_sampai_2025_ha_per_year")),
                   pre09, n09, rate09,
-                  row.get("ratio_laju_sesudah_vs_sebelum_tahun_izin"), row.get("verdict")))
+                  row.get("ratio_laju_sesudah_vs_sebelum_tahun_izin"), row.get("verdict"),
+                  to_num(row.get("loss_tahun_izin_sampai_2024_ha")),
+                  to_int(row.get("n_tahun_dari_tahun_izin_sampai_2024")),
+                  to_num(row.get("rate_tahun_izin_sampai_2024_ha_per_year")),
+                  row.get("ratio_laju_sesudah_vs_sebelum_jendela_2024") or None,
+                  row.get("verdict_jendela_2024") or None))
             n += 1
     conn.commit()
     print(f"     ✓ wiup_temporal: {n} rows", file=sys.stderr)
@@ -705,6 +731,8 @@ def step_master_view(conn):
             l.loss_2001_2025_ha,
             l.loss_pct_poligon_2001_2025,
             l.loss_2001_2025_pct_hutan2000,
+            l.loss_2001_2024_ha,
+            l.loss_2001_2024_pct_hutan2000,
             l.loss_2001_2008_ha, l.hutan_2009_ha, l.loss_2009_2025_ha,
             l.loss_2009_2025_pct_hutan2009,
             l.tiles AS hansen_tiles,
@@ -716,6 +744,10 @@ def step_master_view(conn):
             t.rate_2009_sampai_tahun_izin_ha_per_year,
             t.ratio_laju_sesudah_vs_sebelum_tahun_izin,
             t.verdict AS temporal_verdict,
+            t.loss_tahun_izin_sampai_2024_ha,
+            t.rate_tahun_izin_sampai_2024_ha_per_year,
+            t.ratio_laju_sesudah_vs_sebelum_jendela_2024,
+            t.verdict_jendela_2024 AS temporal_verdict_2024,
             m.db_match,
             m.minerbaone_url,
             m.id_badan_usaha,
@@ -839,6 +871,10 @@ def attach_pengukuran(db_path, batch_csv, temporal_csv):
     only = {r[0] for r in conn.execute("SELECT kode_wiup FROM wiup_geoportal")}
     step_loss(conn, batch_csv, only_wiup=only)
     step_temporal(conn, temporal_csv, only_wiup=only)
+    # View wiup_master ikut di-refresh: definisinya milik berkas ini dan bisa
+    # berubah bersama skema tabel pengukuran (mis. kolom jendela tesis 2024) —
+    # tanpa ini DB lama menyimpan view basi yang tak melihat kolom baru.
+    step_master_view(conn)
     step_indexes(conn)
     conn.close()
 

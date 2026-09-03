@@ -40,16 +40,34 @@ def main() -> int:
                     help="DB himpunan lengkap (+galian C); bila berkas tak ada → lengkap: null")
     ap.add_argument("--geojson", type=Path, default=GEOJSON_DEFAULT)
     ap.add_argument("--stats", type=Path, default=STATS_DEFAULT)
+    ap.add_argument("--tanpa-tulis-db", action="store_true",
+                    help="jangan menulis apa pun ke DB (tanpa v_konsesi/meta/bangun) — untuk uji "
+                         "drift: bandingkan keluaran terhadap berkas ter-commit tanpa mengotori DB")
     a = ap.parse_args()
+
+    def jejak(path: Path) -> str:
+        """Path untuk dicatat di tabel `bangun`: selalu relatif terhadap akar repo bila
+        memungkinkan, supaya provenansi tak bergantung lokasi checkout (temuan audit 3 Sep:
+        path default terekam absolut sementara path eksplisit terekam relatif)."""
+        try:
+            return str(Path(path).resolve().relative_to(AKAR))
+        except ValueError:
+            return str(path)
 
     if not a.db.exists():
         print(f"GAGAL: DB tidak ada: {a.db}", file=sys.stderr)
         return 2
-    con = buka(a.db)
+    con = buka(a.db, baca_saja=a.tanpa_tulis_db)
     wajib_tabel(con, *TABEL_HULU_MINERBA)
-    if pastikan_v_konsesi(con, "pipeline/09_sajikan.py"):
-        print("  v_konsesi dibuat ulang + meta (w1_util.pastikan_v_konsesi)")
-    con.commit()
+    if a.tanpa_tulis_db:
+        print("  --tanpa-tulis-db: DB dibuka baca-saja, v_konsesi/meta/bangun TIDAK disentuh")
+        if not con.execute("SELECT 1 FROM sqlite_master WHERE type='view' AND name='v_konsesi'").fetchone():
+            print("GAGAL: v_konsesi belum ada — jalankan tanpa --tanpa-tulis-db dulu", file=sys.stderr)
+            return 2
+    else:
+        if pastikan_v_konsesi(con, "pipeline/09_sajikan.py"):
+            print("  v_konsesi dibuat ulang + meta (w1_util.pastikan_v_konsesi)")
+        con.commit()
     wajib_tabel(con, "v_konsesi")
 
     # (a) geojson QGIS
@@ -68,13 +86,15 @@ def main() -> int:
     out.update(stats_minerba(con))
     lengkap = None
     if a.db_lengkap is not None and a.db_lengkap.exists():
-        con_l = buka(a.db_lengkap)
+        con_l = buka(a.db_lengkap, baca_saja=a.tanpa_tulis_db)
         wajib_tabel(con_l, *TABEL_HULU_LENGKAP)
-        if pastikan_v_konsesi(con_l, "pipeline/09_sajikan.py"):   # SKEMA §8: v_konsesi ada di KEDUA DB
-            print("  v_konsesi dibuat ulang + meta di DB lengkap")
-        con_l.commit()
+        if not a.tanpa_tulis_db:
+            if pastikan_v_konsesi(con_l, "pipeline/09_sajikan.py"):  # SKEMA §8: v_konsesi ada di KEDUA DB
+                print("  v_konsesi dibuat ulang + meta di DB lengkap")
+            con_l.commit()
         lengkap = blok_lengkap(con_l)
-        tandai_selesai(con_l, "09_sajikan", stats=str(a.stats))
+        if not a.tanpa_tulis_db:
+            tandai_selesai(con_l, "09_sajikan", stats=jejak(a.stats))
         con_l.close()
     else:
         print(f"  DB lengkap tidak ada ({a.db_lengkap}) → lengkap: null")
@@ -90,7 +110,8 @@ def main() -> int:
           f"({m['pct_hutan_2000']}% hutan 2000)" + (f" · lengkap {lengkap['n_konsesi']} konsesi · "
           f"{lengkap['hilang_2001_2024_ha']:,} ha" if lengkap else ""))
 
-    tandai_selesai(con, "09_sajikan", geojson=str(a.geojson), stats=str(a.stats), n_fitur=len(feats))
+    if not a.tanpa_tulis_db:
+        tandai_selesai(con, "09_sajikan", geojson=jejak(a.geojson), stats=jejak(a.stats), n_fitur=len(feats))
     con.close()
     return 0
 

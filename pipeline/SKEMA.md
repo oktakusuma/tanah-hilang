@@ -97,7 +97,8 @@ CREATE TABLE kepadatan_penduduk (          -- salin apa adanya (BPS 2015–2024)
 Sumber: `data/wiup/kalimantan_unique.geojson` (1.765; saring `himpunan=minerba` dengan daftar
 komoditas `scripts/filter_minerba.py::MINERBA_COMMODITIES` — salin ke `lib/himpunan.py`),
 `data/minerba-kalimantan.db` (`perizinan`, `badan_usaha`), logika cocok SK-persis
-(`build_combined_db.step_match`) + `match_harder.py` T1–T4, tanggal pulih dari
+(`build_combined_db.step_match` → `strategi_cocok='T0_exact'`) + `match_harder.py`
+(`T1_norm_sk`, `T2_fuzzy_name`, `T3_digits`), tanggal pulih dari
 `build_kawasan_hutan.py` (bagian `wiup_tanggal_pulih`; geoportal IPPKH). `luas_poligon_ha`
 dari batch CSV (`polygon_area_ha`) atau dihitung ulang dengan `_geo_common` — pilih batch CSV
 agar identik dgn arsip.
@@ -222,7 +223,17 @@ Invarian (assert di skrip + `10_verifikasi.py`): untuk tiap label, Σ ha transis
 Σ `mapbiomas_tahunan` tahun_awal tanpa kelas 27, dan sisi akhir idem = **4.284.991,78 ha** utk
 label 2001-2024 (minerba). Paritas Sankey 2001→2024 langsung total pita berubah (kelas_awal ≠
 kelas_akhir, tanpa 27) = **1.270.225,42 ha**; lubang tambang 2024 = 157.287,46 ha. (Angka lama
-1.269.862 / 4.283.529,6 berasal dari bangun 31 Agu sebelum arsip dibangun ulang 1 Sep — basi.)
+1.269.862 / 4.283.529,6 / Σ 23 langkah 3.130.393 berasal dari bangun 31 Agu sebelum arsip
+dibangun ulang 1 Sep — **basi**; nilai berlaku Σ 23 langkah = 3.130.393,14 ha, rasio 2,46×.
+
+> **Definisi angka 3.130.393,14 ha** (Σ 23 langkah tahunan): dijumlahkan dari
+> `transisi_pasangan` pasangan berurutan `tahun_akhir = tahun_awal + 1`, `kelas_awal <>
+> kelas_akhir`, **di-join ke `mapbiomas_kelas` sehingga kelas 0 (nodata) gugur** — penyaring
+> yang sama dengan pembandingnya `v_transisi_aliran` (1.270.225,46 ha). Tanpa membuang
+> kelas 0 hasilnya 3.130.403,21 ha, dan itu **tidak sebanding** dengan penyebutnya
+> (temuan audit 3 Sep 2026 — dua agen sempat memakai definisi berbeda).
+Catatan presisi: `v_transisi_aliran` membulatkan per baris sehingga Σ-nya 1.270.225,46 ha —
+selisih pembulatan 0,04 ha, bukan angka berbeda.)
 **Kaveat data (himpunan lengkap):** 8 konsesi galian C berkomoditas PASIR LAUT / PASIR KUARSA
 punya **nol piksel MapBiomas** — poligonnya di perairan, di luar cakupan raster darat (bukan galat).
 Mereka sah tak punya baris `mapbiomas_tahunan`/`transisi_konsesi`; rekonsiliasi `05_transisi.py`

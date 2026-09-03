@@ -27,7 +27,11 @@ from pipeline.lib.meta import cakupan_dua_arah  # noqa: E402
 PY = sys.executable
 SKRIP_04 = AKAR / "pipeline/04_mapbiomas.py"
 SKRIP_05 = AKAR / "pipeline/05_transisi.py"
-DB_PENUH = AKAR / "data/.bangun/w2-minerba.db"
+# Uji paritas penuh dijalankan terhadap DB PRODUKSI, bukan berkas kerja sementara.
+# Sebelumnya menunjuk data/.bangun/w2-minerba.db — berkas hasil pengembangan yang hilang
+# saat folder kerja dibersihkan, sehingga uji ini diam-diam ter-skip (temuan audit 3 Sep).
+# data/tanah-hilang.db selalu ada, di-commit, dan justru artefak yang benar-benar dipakai.
+DB_PENUH = AKAR / "data/tanah-hilang.db"
 TS_LEGENDA = AKAR / "webapp/src/lib/mapbiomasLegend.ts"
 
 # 10 konsesi: 2 tanpa tahun_izin, 1 besar (22.724 ha, izin 2005), izin 2009/2012/2012/2013/2016/2020/2025
@@ -57,7 +61,8 @@ def _jalan(skrip: Path, db: Path, himpunan: str = "minerba") -> subprocess.Compl
 
 
 def _buka(db: Path) -> sqlite3.Connection:
-    con = sqlite3.connect(str(db))
+    # baca-saja: uji tak boleh mengotori DB yang di-commit
+    con = sqlite3.connect(f"file:{db}?mode=ro", uri=True)
     con.execute("ATTACH DATABASE ? AS m", (f"file:{_arsip_m()}?mode=ro",))
     return con
 
@@ -231,7 +236,7 @@ def _db_penuh_siap() -> bool:
         return False
 
 
-@pytest.mark.skipif(not _db_penuh_siap(), reason="DB penuh data/.bangun/w2-minerba.db belum dibangun (04+05)")
+@pytest.mark.skipif(not _db_penuh_siap(), reason=f"DB {DB_PENUH.name} belum punya 05_transisi.selesai")
 def test_paritas_penuh_minerba():
     con = _buka(DB_PENUH)
     assert con.execute("SELECT COUNT(DISTINCT kode_wiup) FROM mapbiomas_tahunan").fetchone()[0] == 825

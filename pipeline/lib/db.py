@@ -50,11 +50,24 @@ def buka(path: Path, baca_saja: bool = False) -> sqlite3.Connection:
 
 
 def git_commit() -> str:
+    """Commit HEAD saat DB dibangun, ditambah penanda `+kotor` bila pohon kerja punya
+    perubahan yang belum di-commit.
+
+    Penanda itu penting: DB v3 pertama dibangun ketika seluruh `pipeline/` masih berupa
+    berkas belum-ter-commit, sehingga `git_commit` merekam HEAD yang SAMA SEKALI belum
+    memuat kode pembangunnya (temuan audit 3 Sep 2026). Tanpa penanda, pembaca mengira
+    commit itu bisa dipakai melacak kodenya."""
     try:
-        return subprocess.check_output(["git", "-C", str(AKAR), "rev-parse", "--short", "HEAD"],
-                                       text=True, stderr=subprocess.DEVNULL).strip()
+        h = subprocess.check_output(["git", "-C", str(AKAR), "rev-parse", "--short", "HEAD"],
+                                    text=True, stderr=subprocess.DEVNULL).strip()
     except Exception:  # noqa: BLE001 — di luar git tetap boleh jalan
         return "tanpa-git"
+    try:
+        kotor = subprocess.check_output(["git", "-C", str(AKAR), "status", "--porcelain"],
+                                        text=True, stderr=subprocess.DEVNULL).strip()
+    except Exception:  # noqa: BLE001
+        return h
+    return f"{h}+kotor" if kotor else h
 
 
 def pastikan_bangun(con: sqlite3.Connection) -> None:
