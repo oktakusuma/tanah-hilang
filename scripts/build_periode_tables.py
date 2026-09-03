@@ -2,6 +2,7 @@
 # STATUS  : ARSIP — tabel periode_* (kohort SK P1/P2/P3) + pemilik mayoritas column_meta v2
 # CATATAN : kerangka pra-pivot; meta di v3 ditulis tiap skrip pemilik tabel lewat pipeline/lib/meta.py
 # LABEL   : 3 Sep 2026 (bundel publik disetel ke pipeline v3 `pipeline/bangun.sh` — lihat README §7; jangan dihapus, tidak dipanggil bangun.sh)
+
 """Bangun tabel analisis 3-PERIODE ke SQLite (data acuan, reproducible).
 
 Periode kewenangan izin (dari `iup_year`):
@@ -561,6 +562,10 @@ COLUMN_META = [
      "Σ_tahun loss_ha (2001-2025)", "Hansen lossyear × poligon WIUP (= Σ wiup_loss_yearly.loss_ha)"),
     ("wiup_loss", "loss_pct_poligon_2001_2025", "Persen luas POLIGON (bukan hutan) yang hilang tutupan pohonnya.",
      "100 · loss_2001_2025_ha / polygon_area_ha", "wiup_loss"),
+    ("wiup_loss", "loss_2001_2024_ha", "JENDELA TESIS (proposal v0.3.2, pipeline v2 2 Sep 2026): total kehilangan tutupan pohon 2001-2024 — 2024 batas MapBiomas, jendela analisis tesis. Dasar angka utama 1.548.813 ha.",
+     "Σ_tahun loss_ha (2001-2024) — identitas eksak dari kolom per-tahun CSV", "Hansen lossyear × poligon WIUP"),
+    ("wiup_loss", "loss_2001_2024_pct_hutan2000", "Persen tutupan pohon 2000 yang hilang pada jendela tesis 2001-2024 — headline 39,3% dihitung dari agregat kolom ini.",
+     "100 · loss_2001_2024_ha / forest_2000_ha", "wiup_loss"),
     ("wiup_loss", "loss_2001_2025_pct_hutan2000", "Persen tutupan pohon 2000 yang hilang 2001-2025 (eks loss_pct_hutan2000, eks-eks loss_pct_of_forest — jendela pembilang masuk nama) — headline 40,7% dihitung dari agregat kolom ini.",
      "100 · loss_2001_2025_ha / forest_2000_ha", "wiup_loss"),
     ("wiup_loss", "tiles", "Daftar tile Hansen (grid 10°×10°) yang overlap poligon konsesi (dipisah '|'; >1 tile jika konsesi lintas-tile).",
@@ -593,8 +598,16 @@ COLUMN_META = [
      "loss_tahun_izin_sampai_2025_ha / n_tahun_dari_tahun_izin_sampai_2025", None),
     ("wiup_temporal", "ratio_laju_sesudah_vs_sebelum_tahun_izin", "Rasio laju pasca:pra-izin (>1 = akselerasi pasca-izin).",
      "rate_tahun_izin_sampai_2025_ha_per_year / rate_2001_sampai_tahun_izin_ha_per_year (∞ jika pre=0 & post>0)", None),
-    ("wiup_temporal", "verdict", "Kategori pola temporal per konsesi: accelerated_post_iup ('Dipercepat setelah izin', ratio>1,5), loss_only_after_iup ('Kerusakan hanya setelah izin', pre=0 & post>0), decelerated_post_iup ('Melambat setelah izin', ratio<0,67), stable ('stabil'), no_loss_either, no_iup_date_or_out_of_range.",
+    ("wiup_temporal", "verdict", "ARSIP jendela pra-pivot 2001-2025 (pembanding; konsumen: keluarga backtrack_*). Kategori pola temporal per konsesi: accelerated_post_iup ('Dipercepat setelah izin', ratio>1,5), loss_only_after_iup ('Kerusakan hanya setelah izin', pre=0 & post>0), decelerated_post_iup ('Melambat setelah izin', ratio<0,67), stable ('stabil'), no_loss_either, no_iup_date_or_out_of_range. Penerus jendela tesis: verdict_jendela_2024.",
      "aturan ambang atas ratio_laju_sesudah_vs_sebelum_tahun_izin (lihat scripts/temporal_iup.py)", "scripts/temporal_iup.py"),
+    ("wiup_temporal", "loss_tahun_izin_sampai_2024_ha", "Total loss (ha) jendela PASCA-izin versi JENDELA TESIS 2001-2024 (pivot proposal v0.3.2): tahun izin terbit (iup_year, inklusif) s/d 2024. NULL bila iup_year 2025 (tak ada tahun pasca-izin di jendela tesis).", "Σ loss_ha, iup_year ≤ tahun ≤ 2024", "wiup_loss_yearly"),
+    ("wiup_temporal", "n_tahun_dari_tahun_izin_sampai_2024", "Jumlah tahun observasi sejak iup_year dalam jendela tesis (2024 − iup_year + 1).", "count(iup_year ≤ tahun ≤ 2024)", None),
+    ("wiup_temporal", "rate_tahun_izin_sampai_2024_ha_per_year", "Laju deforestasi rata-rata SETELAH izin (ha/tahun), jendela tesis 2001-2024 — inilah yang ditampilkan drawer detail konsesi.",
+     "loss_tahun_izin_sampai_2024_ha / n_tahun_dari_tahun_izin_sampai_2024", None),
+    ("wiup_temporal", "ratio_laju_sesudah_vs_sebelum_jendela_2024", "Rasio laju pasca:pra-izin pada jendela tesis (>1 = akselerasi pasca-izin; 'inf' bila pra=0 & pasca>0).",
+     "rate_tahun_izin_sampai_2024_ha_per_year / rate_2001_sampai_tahun_izin_ha_per_year", None),
+    ("wiup_temporal", "verdict_jendela_2024", "Kategori pola temporal per konsesi pada JENDELA TESIS 2001-2024 (ambang identik dgn verdict arsip: ratio>1,5 accelerated, <0,67 decelerated, dst) + nilai khusus izin_setelah_jendela_2024 (iup_year 2025: tak bisa dinilai).",
+     "aturan ambang atas ratio_laju_sesudah_vs_sebelum_jendela_2024 (lihat scripts/temporal_iup.py)", "scripts/temporal_iup.py"),
 
     # ── wiup_geoportal: atribut & poligon 825 WIUP dari Geoportal ESDM ──────────
     ("wiup_geoportal", "kode_wiup", "Kode unik WIUP (kunci utama konsesi, dipakai join ke semua tabel).", None, None),
@@ -821,6 +834,8 @@ COLUMN_META = [
     ("wiup_master", "loss_2009_2025_pct_hutan2009", "Persen kehilangan 2009-2025 terhadap hutan-2009 (eks loss_pct_hutan2009).", None, "wiup_loss.loss_2009_2025_pct_hutan2009"),
     ("wiup_master", "loss_pct_poligon_2001_2025", "Persen luas poligon yang hilang tutupan pohonnya 2001-2025.", None, "wiup_loss.loss_pct_poligon_2001_2025"),
     ("wiup_master", "loss_2001_2025_pct_hutan2000", "Persen tutupan pohon 2000 yang hilang 2001-2025 (eks loss_pct_hutan2000, eks-eks loss_pct_of_forest) — metrik utama tesis per konsesi.", None, "wiup_loss.loss_2001_2025_pct_hutan2000"),
+    ("wiup_master", "loss_2001_2024_ha", "JENDELA TESIS 2001-2024 (proposal v0.3.2) — dasar angka utama 1.548.813 ha & kolom utama tabel Konsesi.", None, "wiup_loss.loss_2001_2024_ha"),
+    ("wiup_master", "loss_2001_2024_pct_hutan2000", "Persen hutan 2000 yang hilang pada jendela tesis 2001-2024 (headline 39,3%).", None, "wiup_loss.loss_2001_2024_pct_hutan2000"),
     ("wiup_master", "hansen_tiles", "Daftar tile Hansen yang overlap poligon konsesi.", None, "wiup_loss.tiles (alias hansen_tiles)"),
     ("wiup_master", "loss_2009_sampai_tahun_izin_ha", "Loss PRA-izin diklip ke era Minerba (Σ 2009..iup_year−1; 0 bila iup ≤ 2009, NULL bila iup NULL).", None, "wiup_temporal.loss_2009_sampai_tahun_izin_ha"),
     ("wiup_master", "rate_2009_sampai_tahun_izin_ha_per_year", "Laju pra-izin versi era Minerba: loss_pre_iup_2009 / (iup_year − 2009); NULL bila jendela kosong.", None, "wiup_temporal.rate_2009_sampai_tahun_izin_ha_per_year"),
@@ -829,8 +844,12 @@ COLUMN_META = [
     ("wiup_master", "rate_2001_sampai_tahun_izin_ha_per_year", "Laju deforestasi rata-rata sebelum izin (ha/tahun).", None, "wiup_temporal.rate_2001_sampai_tahun_izin_ha_per_year"),
     ("wiup_master", "rate_tahun_izin_sampai_2025_ha_per_year", "Laju deforestasi rata-rata setelah izin (ha/tahun) — metrik utama Komparasi & peta.", None, "wiup_temporal.rate_tahun_izin_sampai_2025_ha_per_year"),
     ("wiup_master", "ratio_laju_sesudah_vs_sebelum_tahun_izin", "Rasio laju pasca:pra-izin (>1 = akselerasi pasca-izin).", None, "wiup_temporal.ratio_laju_sesudah_vs_sebelum_tahun_izin"),
-    ("wiup_master", "temporal_verdict", "Kategori pola temporal konsesi (accelerated_post_iup/loss_only_after_iup/decelerated_post_iup/stable/dst).",
+    ("wiup_master", "temporal_verdict", "ARSIP jendela pra-pivot 2001-2025. Kategori pola temporal konsesi (accelerated_post_iup/loss_only_after_iup/decelerated_post_iup/stable/dst). Penerus jendela tesis: temporal_verdict_2024.",
      None, "wiup_temporal.verdict (alias temporal_verdict)"),
+    ("wiup_master", "loss_tahun_izin_sampai_2024_ha", "Total loss (ha) jendela PASCA-izin versi jendela tesis 2001-2024; NULL bila iup_year 2025.", None, "wiup_temporal.loss_tahun_izin_sampai_2024_ha"),
+    ("wiup_master", "rate_tahun_izin_sampai_2024_ha_per_year", "Laju deforestasi rata-rata setelah izin (ha/tahun), jendela tesis 2001-2024 — dipakai drawer detail konsesi.", None, "wiup_temporal.rate_tahun_izin_sampai_2024_ha_per_year"),
+    ("wiup_master", "ratio_laju_sesudah_vs_sebelum_jendela_2024", "Rasio laju pasca:pra-izin pada jendela tesis (>1 = akselerasi).", None, "wiup_temporal.ratio_laju_sesudah_vs_sebelum_jendela_2024"),
+    ("wiup_master", "temporal_verdict_2024", "Kategori pola temporal jendela tesis 2001-2024 (+ izin_setelah_jendela_2024 utk iup_year 2025).", None, "wiup_temporal.verdict_jendela_2024 (alias temporal_verdict_2024)"),
     ("wiup_master", "db_match", "'yes'/'no' — apakah konsesi cocok ke suatu izin MinerbaOne.", None, "wiup_match.db_match"),
     ("wiup_master", "minerbaone_url", "Tautan halaman detail badan usaha di MinerbaOne publik (bila db_match='yes').", None, "wiup_match.minerbaone_url"),
     ("wiup_master", "id_badan_usaha", "ID badan usaha MinerbaOne hasil pencocokan.", None, "wiup_match.id_badan_usaha"),
@@ -1148,12 +1167,18 @@ JENDELA_DESKRIPSI = {
 
 def build_column_meta(con):
     """Bangun column_meta (kamus kolom); buang baris yatim (tabel/kolom tak wujud)."""
-    con.execute("DROP TABLE IF EXISTS column_meta")
+    # PIPELINE v2 (2 Sep 2026): TIDAK lagi DROP — skrip analisis tesis (kawasan
+    # hutan, umur izin, keyakinan) kini jalan SEBELUM blok arsip ini dan sudah
+    # menulis baris metanya sendiri; DROP akan menghapusnya. Pola kepemilikan:
+    # tiap skrip hanya menghapus/menulis baris miliknya (sama dgn mapbiomas.db).
     con.execute(
-        """CREATE TABLE column_meta (
+        """CREATE TABLE IF NOT EXISTS column_meta (
             nama_tabel TEXT, nama_kolom TEXT, deskripsi TEXT, rumus TEXT, sumber TEXT,
             PRIMARY KEY (nama_tabel, nama_kolom))"""
     )
+    milik_kolom = sorted({row[0] for row in COLUMN_META})
+    con.execute("DELETE FROM column_meta WHERE nama_tabel IN (%s)"
+                % ",".join("?" * len(milik_kolom)), milik_kolom)
     real = {}
     for (tname,) in con.execute("SELECT name FROM sqlite_master WHERE type IN ('table','view')"):
         real[tname] = {r[1] for r in con.execute(f'PRAGMA table_info("{tname}")')}
@@ -1167,7 +1192,7 @@ def build_column_meta(con):
             kept.append(row)
         else:
             skipped.append((row[0], row[1]))
-    con.executemany("INSERT INTO column_meta VALUES (?,?,?,?,?)", kept)
+    con.executemany("INSERT OR REPLACE INTO column_meta VALUES (?,?,?,?,?)", kept)
     if skipped:
         print(f"  column_meta: {len(skipped)} baris yatim di-skip: {skipped[:5]}")
     return len(kept)
@@ -1921,12 +1946,9 @@ def main() -> int:
     build_baseline_tahunan(con, "baseline_tahunan")
 
     # ── 8. analysis_meta (PROVENANCE) ─────────────────────────────────────────
-    con.execute("DROP TABLE IF EXISTS analysis_meta")
-    # Kolom status (Fase G butir 7): AKTIF / ARSIP / PROYEKSI — lihat
-    # ANALYSIS_STATUS di atas. Konsumen lama (db_browser, halaman Database)
-    # membaca kolom eksplisit, jadi kolom tambahan ini tak merusak.
+    # PIPELINE v2: additive — lihat catatan column_meta di atas.
     con.execute(
-        """CREATE TABLE analysis_meta (
+        """CREATE TABLE IF NOT EXISTS analysis_meta (
             nama_tabel TEXT PRIMARY KEY, deskripsi TEXT, sumber TEXT, metode TEXT,
             script TEXT, status TEXT NOT NULL DEFAULT 'AKTIF'
             CHECK (status IN ('AKTIF','ARSIP','PROYEKSI')))"""
@@ -2406,7 +2428,10 @@ def main() -> int:
     if not has_bersih:
         existing -= {"periode_ringkasan" + BERSIH_SUFFIX, "periode_tahunan_aktif" + BERSIH_SUFFIX,
                      "periode_komoditas" + BERSIH_SUFFIX, "periode_signifikansi" + BERSIH_SUFFIX}
-    con.executemany("INSERT INTO analysis_meta VALUES (?,?,?,?,?,?)",
+    milik_meta = sorted({row[0] for row in meta})
+    con.execute("DELETE FROM analysis_meta WHERE nama_tabel IN (%s)"
+                % ",".join("?" * len(milik_meta)), milik_meta)
+    con.executemany("INSERT OR REPLACE INTO analysis_meta VALUES (?,?,?,?,?,?)",
                     [row + (ANALYSIS_STATUS.get(row[0], "AKTIF"),)
                      for row in existing_meta_rows(meta, existing)])
 

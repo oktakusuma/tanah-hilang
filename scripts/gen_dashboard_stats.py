@@ -2,6 +2,7 @@
 # STATUS  : ARSIP — dashboard-stats.json skema v2 (kunci periode/atribusi/lapisan/kohort)
 # CATATAN : pengganti: pipeline/09_sajikan.py (skema SKEMA.md §9: minerba, lengkap, keyakinan, umur, ippkh, sankey_2001_2024, registri)
 # LABEL   : 3 Sep 2026 (bundel publik disetel ke pipeline v3 `pipeline/bangun.sh` — lihat README §7; jangan dihapus, tidak dipanggil bangun.sh)
+
 """Generate ONE source of truth for every hardcoded number in the dashboard.
 
 Queries the built SQLite DBs and writes webapp/src/generated/dashboard-stats.json.
@@ -39,6 +40,9 @@ def snapshot(db_path: Path) -> dict:
     loss = one("SELECT COALESCE(SUM(loss_2001_2025_ha),0) FROM wiup_master")
     # Jendela era Minerba (Fase B — fokus permukaan web, keputusan igoen 12 Agu)
     loss09 = one("SELECT COALESCE(SUM(loss_2009_2025_ha),0) FROM wiup_master")
+    # Jendela tesis 2001-2024 (proposal v0.3.2) — kolom first-class sejak
+    # pipeline v2 (dihitung build_combined_db dgn identitas eksak per-tahun).
+    loss24 = one("SELECT COALESCE(SUM(loss_2001_2024_ha),0) FROM wiup_master")
     hutan09 = one("SELECT COALESCE(SUM(hutan_2009_ha),0) FROM wiup_master")
     forest = one("SELECT COALESCE(SUM(forest_2000_ha),0) FROM wiup_master")
     matched = one("SELECT COUNT(*) FROM wiup_match WHERE match_strategy IS NOT NULL")
@@ -73,6 +77,8 @@ def snapshot(db_path: Path) -> dict:
         "loss_ha": round(loss),
         "forest_2000_ha": round(forest),
         "loss_pct_forest": round(100.0 * loss / forest, 1) if forest else 0.0,
+        "loss_2001_2024_ha": round(loss24),
+        "loss_2001_2024_pct_hutan2000": round(100.0 * loss24 / forest, 1) if forest else 0.0,
         "loss_2009_2025_ha": round(loss09),
         "hutan_2009_ha": round(hutan09),
         # Kunci JSON = nama kolom DB pasca-rename 15 Agu (jendela pembilang

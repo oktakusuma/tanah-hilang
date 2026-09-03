@@ -2,6 +2,7 @@
 # STATUS  : ARSIP — verifikator invarian DB v2 (kalimantan.db + mapbiomas.db + dashboard-stats.json lama)
 # CATATAN : pengganti: pipeline/10_verifikasi.py (12 kelompok pemeriksaan atas tanah-hilang.db, termasuk paritas arsip)
 # LABEL   : 3 Sep 2026 (bundel publik disetel ke pipeline v3 `pipeline/bangun.sh` — lihat README §7; jangan dihapus, tidak dipanggil bangun.sh)
+
 """Pemeriksa invarian DB analisis — "make verify" (rekomendasi ANALISA-MENYELURUH #3).
 
 Dokumentasi 4-unsur (Konvensi #4):
@@ -76,7 +77,8 @@ KOLOM_NON_NEGATIF = {
                   "loss_2001_2008_ha", "loss_2009_2025_ha", "loss_2009_2025_pct_hutan2009"],
     "wiup_loss_yearly": ["loss_ha"],
     "wiup_temporal": ["loss_2001_sampai_tahun_izin_ha", "loss_tahun_izin_sampai_2025_ha", "n_tahun_dari_2001_sampai_tahun_izin",
-                      "n_tahun_dari_tahun_izin_sampai_2025", "rate_2001_sampai_tahun_izin_ha_per_year", "rate_tahun_izin_sampai_2025_ha_per_year"],
+                      "n_tahun_dari_tahun_izin_sampai_2025", "rate_2001_sampai_tahun_izin_ha_per_year", "rate_tahun_izin_sampai_2025_ha_per_year",
+                      "loss_tahun_izin_sampai_2024_ha", "n_tahun_dari_tahun_izin_sampai_2024", "rate_tahun_izin_sampai_2024_ha_per_year"],
     "atribusi_sawit": ["loss_2001_2021_ha", "loss_sawit_tol2th_2001_2021_ha",
                        "loss_sawit_jeda5th_2001_2021_ha", "loss_sawit_tahunsama_2001_2021_ha",
                        "loss_2022_2025_ha", "loss_sawit_2001_sampai_tahun_izin_ha",
@@ -634,6 +636,50 @@ def cek_jendela2009(con, lap):
         lap.ok("jendela-2009-identitas",
                f"hutan_2009 = forest_2000 − loss 2001-2008 & dekomposisi jendela utuh "
                f"(Σ loss 2009-2025 = {tot:,.2f} ha)")
+
+    # ── Jendela TESIS 2001-2024 (pipeline v2, proposal v0.3.2) ───────────────
+    # loss_2001_2024_ha harus = Σ wiup_loss_yearly tahun ≤ 2024 per konsesi
+    # (identitas eksak yang sama dengan cara build_combined_db menghitungnya).
+    ada24 = satu(con, """SELECT COUNT(*) FROM pragma_table_info('wiup_loss')
+                        WHERE name = 'loss_2001_2024_ha'""")
+    if not ada24:
+        lap.warn("jendela-tesis-2024", "kolom loss_2001_2024_ha absen — DB pra-pipeline-v2")
+    else:
+        buruk24 = satu(con, """SELECT COUNT(*) FROM wiup_loss l
+            LEFT JOIN (SELECT kode_wiup, SUM(loss_ha) s FROM wiup_loss_yearly
+                       WHERE year <= 2024 GROUP BY kode_wiup) y USING (kode_wiup)
+            WHERE ABS(COALESCE(l.loss_2001_2024_ha,0) - COALESCE(y.s,0)) > 0.1""")
+        if buruk24:
+            lap.fail("jendela-tesis-2024",
+                     f"{buruk24} baris loss_2001_2024_ha != Σ per-tahun ≤2024")
+        else:
+            tot24 = satu(con, "SELECT SUM(loss_2001_2024_ha) FROM wiup_loss")
+            lap.ok("jendela-tesis-2024",
+                   f"loss_2001_2024_ha = Σ per-tahun ≤2024 utuh "
+                   f"(Σ jendela tesis = {tot24:,.2f} ha)")
+
+    # Identitas pasca-izin jendela tesis: loss_tahun_izin_sampai_2024_ha =
+    # Σ loss_ha tahun iup_year..2024 (kolom pivot 2 Sep 2026; WARN bila absen).
+    kol_t = {r[1] for r in con.execute("PRAGMA table_xinfo(wiup_temporal)")}
+    if "loss_tahun_izin_sampai_2024_ha" not in kol_t:
+        lap.warn("pasca-izin-2024", "kolom loss_tahun_izin_sampai_2024_ha absen — DB pra-pivot")
+    else:
+        buruk_t24 = satu(con, """SELECT COUNT(*) FROM wiup_temporal t
+            LEFT JOIN (SELECT kode_wiup, iy, SUM(loss_ha) s FROM wiup_loss_yearly
+                       JOIN (SELECT kode_wiup kw, iup_year iy FROM wiup_temporal) ON kw = kode_wiup
+                       WHERE year BETWEEN iy AND 2024 GROUP BY kode_wiup) y USING (kode_wiup)
+            WHERE t.loss_tahun_izin_sampai_2024_ha IS NOT NULL
+              AND ABS(t.loss_tahun_izin_sampai_2024_ha - COALESCE(y.s,0)) > 0.1""")
+        kosong25 = satu(con, """SELECT COUNT(*) FROM wiup_temporal
+            WHERE iup_year = 2025 AND loss_tahun_izin_sampai_2024_ha IS NOT NULL""")
+        if buruk_t24 or kosong25:
+            lap.fail("pasca-izin-2024",
+                     f"{buruk_t24} baris loss_tahun_izin_sampai_2024_ha != Σ iup..2024; "
+                     f"{kosong25} baris iup_year 2025 tak NULL")
+        else:
+            n24 = satu(con, "SELECT COUNT(*) FROM wiup_temporal WHERE verdict_jendela_2024 IS NOT NULL")
+            lap.ok("pasca-izin-2024",
+                   f"loss_tahun_izin_sampai_2024_ha = Σ iup..2024 utuh ({n24} konsesi ber-verdict jendela tesis)")
 
 
 def cek_metadata(con, lap):
