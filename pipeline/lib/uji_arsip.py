@@ -70,7 +70,11 @@ SALIN = {
                COALESCE(REPLACE(verdict_jendela_2024, 'izin_setelah_jendela_2024', 'izin_setelah_jendela'), 'tanpa_tahun_izin') AS vonis
         FROM a.wiup_temporal""",
     "izin_klasifikasi": """
-        CREATE TABLE izin_klasifikasi AS SELECT * FROM a.klasifikasi_izin""",
+        CREATE TABLE izin_klasifikasi AS
+        SELECT k.*, CASE WHEN g.iup_year IS NULL THEN NULL
+                         WHEN k.kelas = 'PERPANJANGAN' THEN g.iup_year - 20
+                         ELSE g.iup_year END AS tahun_mulai_indikasi
+        FROM a.klasifikasi_izin k LEFT JOIN a.wiup_geoportal g USING (kode_wiup)""",
     "ippkh": """
         CREATE TABLE ippkh AS SELECT * FROM a.konsesi_ippkh""",
     "kawasan_hutan": """
@@ -94,6 +98,16 @@ SALIN = {
     "transisi_pasangan": """
         CREATE TABLE transisi_pasangan AS
         SELECT tahun_awal, tahun_akhir, kelas_awal, kelas_akhir, n_konsesi, pixels AS piksel, ha FROM m.transisi_pasangan""",
+    # Arsip TIDAK punya varian aktif (tabel lahir 25 Sep 2026) — dibuat KOSONG hanya supaya
+    # skema DB uji lengkap; test yang menguji isinya membangun sendiri lewat 05_transisi.
+    "transisi_pasangan_aktif": """
+        CREATE TABLE transisi_pasangan_aktif (
+          tahun_awal INTEGER NOT NULL, tahun_akhir INTEGER NOT NULL,
+          baru_aktif INTEGER NOT NULL CHECK (baru_aktif IN (0, 1)),
+          kelas_awal INTEGER NOT NULL, kelas_akhir INTEGER NOT NULL,
+          n_konsesi INTEGER NOT NULL, piksel INTEGER NOT NULL, ha REAL NOT NULL,
+          PRIMARY KEY (tahun_awal, tahun_akhir, baru_aktif, kelas_awal, kelas_akhir),
+          CHECK (tahun_awal < tahun_akhir))""",
 }
 BUTUH_M = {"mapbiomas_kelas", "mapbiomas_tahunan", "transisi_kohort", "transisi_konsesi", "transisi_pasangan"}
 

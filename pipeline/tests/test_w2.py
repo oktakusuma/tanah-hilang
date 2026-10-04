@@ -74,6 +74,25 @@ def db_uji(tmp_path_factory) -> Path:
     # FK REFERENCES konsesi(kode_wiup) butuh indeks unik pada induk; uji_arsip (sejak 2 Sep 14:36)
     # sudah membuatnya sendiri — IF NOT EXISTS menjaga bila versi lama yang terpasang.
     con.execute("CREATE UNIQUE INDEX IF NOT EXISTS ux_konsesi_kode ON konsesi(kode_wiup)")
+    # izin_klasifikasi sintetis (prasyarat 05 utk transisi_pasangan_aktif — jam indikasi).
+    # Aturan uji deterministik: tahun_izin <= 2012 -> PERPANJANGAN (mulai = tahun-20, pra-2001
+    # = aktif sejak awal jendela); > 2012 -> IZIN_PERTAMA (mulai = tahun_izin, jadi ada yang
+    # masuk di tengah jendela dan satu 2025 tak pernah aktif); NULL -> TAK_DINILAI tanpa jam.
+    con.execute("""CREATE TABLE izin_klasifikasi (
+        kode_wiup TEXT PRIMARY KEY REFERENCES konsesi(kode_wiup), kelas TEXT NOT NULL,
+        bukti TEXT, dasar TEXT NOT NULL, durasi_sk INTEGER,
+        masa_berlaku_diwarisi INTEGER NOT NULL, pra_izin_dominan INTEGER,
+        tahun_mulai_indikasi INTEGER)""")
+    for kode, th in con.execute("SELECT kode_wiup, tahun_izin FROM konsesi").fetchall():
+        if th is None:
+            kelas, mulai = "TAK_DINILAI", None
+        elif th <= 2012:
+            kelas, mulai = "PERPANJANGAN", th - 20
+        else:
+            kelas, mulai = "IZIN_PERTAMA", th
+        con.execute("INSERT INTO izin_klasifikasi VALUES (?,?,?,?,?,?,?,?)",
+                    (kode, kelas, "INDIKASI" if kelas != "TAK_DINILAI" else None,
+                     "sintetis uji", None, 0, None, mulai))
     con.commit(); con.close()
     r4 = _jalan(SKRIP_04, db)
     assert r4.returncode == 0, r4.stderr[-2000:]
@@ -172,9 +191,67 @@ def test_kohort_pasangan_dan_rekonsiliasi(db_uji):
     assert v == 0
 
 
+def test_pasangan_aktif(db_uji):
+    """transisi_pasangan_aktif: 276 pasangan; sisi asal baru_aktif=0 = komposisi tahun_awal utk
+    konsesi aktif <= tahun_awal; sisi asal baru_aktif=1 = komposisi tahun_awal utk entran (kelas
+    lahan SEBENARNYA, bukan simpul semu); sisi tujuan = komposisi tahun_akhir utk aktif
+    <= tahun_akhir (INILAH 'tinggi kolom = luas konsesi aktif'); per sel subset
+    transisi_pasangan; konsesi tanpa jam tak pernah ikut."""
+    con = _buka(db_uji)
+    assert con.execute(
+        "SELECT COUNT(DISTINCT tahun_awal*10000+tahun_akhir) FROM transisi_pasangan_aktif").fetchone()[0] == 276
+    # ada entran (kohort uji punya izin 2013/2016/2020 -> masuk di tengah jendela)
+    assert con.execute(
+        "SELECT COUNT(*) FROM transisi_pasangan_aktif WHERE baru_aktif = 1").fetchone()[0] > 0
+    # entran membawa kelas MapBiomas sungguhan (tak ada kode negatif / simpul semu lagi)
+    assert con.execute("SELECT COUNT(*) FROM transisi_pasangan_aktif WHERE kelas_awal < 0").fetchone()[0] == 0
+    # harapan per tahun: komposisi MapBiomas konsesi aktif <= tahun (tanpa 0/27)
+    exp = dict(con.execute("""
+        SELECT m.tahun, SUM(m.ha) FROM mapbiomas_tahunan m JOIN izin_klasifikasi z USING (kode_wiup)
+        WHERE m.kelas NOT IN (0,27) AND z.tahun_mulai_indikasi IS NOT NULL
+          AND z.tahun_mulai_indikasi <= m.tahun GROUP BY m.tahun""").fetchall())
+    exp_baru = {(a, b): h for a, b, h in con.execute("""
+        WITH pas AS (SELECT DISTINCT tahun_awal, tahun_akhir FROM transisi_pasangan_aktif)
+        SELECT pas.tahun_awal, pas.tahun_akhir, SUM(m.ha) FROM pas
+        JOIN izin_klasifikasi z ON z.tahun_mulai_indikasi > pas.tahun_awal
+                               AND z.tahun_mulai_indikasi <= pas.tahun_akhir
+        JOIN mapbiomas_tahunan m ON m.kode_wiup = z.kode_wiup AND m.tahun = pas.tahun_awal
+        WHERE m.kelas NOT IN (0,27) GROUP BY 1,2""")}
+    rows = con.execute("""
+        SELECT tahun_awal, tahun_akhir,
+               SUM(CASE WHEN baru_aktif = 0 AND kelas_awal NOT IN (0,27) THEN ha END),
+               SUM(CASE WHEN baru_aktif = 1 AND kelas_awal NOT IN (0,27) THEN ha END),
+               SUM(CASE WHEN kelas_akhir NOT IN (0,27) THEN ha END)
+        FROM transisi_pasangan_aktif GROUP BY 1,2""").fetchall()
+    assert len(rows) == 276
+    for ya, yb, awal, awal_baru, akhir in rows:
+        assert abs((awal or 0.0) - exp.get(ya, 0.0)) < 0.5, (ya, yb, awal, exp.get(ya))
+        assert abs((awal_baru or 0.0) - exp_baru.get((ya, yb), 0.0)) < 0.5, (ya, yb, awal_baru)
+        assert abs((akhir or 0.0) - exp.get(yb, 0.0)) < 0.5, (ya, yb, akhir, exp.get(yb))
+    # subset: sel biasa tak boleh melebihi transisi_pasangan
+    assert con.execute("""
+        SELECT COUNT(*) FROM (
+          SELECT tahun_awal, tahun_akhir, kelas_awal, kelas_akhir, SUM(ha) ha, SUM(piksel) piksel
+          FROM transisi_pasangan_aktif GROUP BY 1,2,3,4) a
+        JOIN transisi_pasangan p USING (tahun_awal, tahun_akhir, kelas_awal, kelas_akhir)
+        WHERE a.ha > p.ha + 0.01 OR a.piksel > p.piksel""").fetchone()[0] == 0
+    # konsesi 2025 & tanpa tahun: luasnya TIDAK pernah masuk kolom mana pun -> total aktif
+    # (2001,2024) sisi tujuan < total penuh
+    a = con.execute("SELECT SUM(ha) FROM transisi_pasangan_aktif WHERE tahun_awal=2001 AND tahun_akhir=2024 "
+                    "AND kelas_akhir NOT IN (0,27)").fetchone()[0]
+    b = con.execute("SELECT SUM(ha) FROM transisi_pasangan WHERE tahun_awal=2001 AND tahun_akhir=2024 "
+                    "AND kelas_akhir NOT IN (0,27)").fetchone()[0]
+    assert a < b
+    # kunci bangun tercatat
+    bg = dict(con.execute("SELECT kunci, nilai FROM bangun WHERE kunci LIKE '05_transisi.%'").fetchall())
+    assert "05_transisi.n_baris_pasangan_aktif" in bg and "05_transisi.rekonsiliasi_aktif_maks_ha" in bg
+    con.close()
+
+
 def test_meta_hash_dan_bangun(db_uji):
     con = sqlite3.connect(str(db_uji))
-    masalah = [m for m in cakupan_dua_arah(con) if not m.startswith("konsesi:")]   # konsesi = milik W1
+    # konsesi & izin_klasifikasi = milik W1 (di fixture ini sintetis, tanpa meta)
+    masalah = [m for m in cakupan_dua_arah(con) if not m.startswith(("konsesi:", "izin_klasifikasi:"))]
     assert masalah == []
     b = dict(con.execute("SELECT kunci, nilai FROM bangun").fetchall())
     assert b["mapbiomas.hash_geometri"] == b["konsesi.hash_geometri"]
@@ -182,7 +259,8 @@ def test_meta_hash_dan_bangun(db_uji):
     assert con.execute("SELECT lisensi FROM analysis_meta WHERE nama_tabel='transisi_konsesi'").fetchone()[0].startswith("CC BY-SA")
     assert con.execute("SELECT COUNT(*) FROM sumber WHERE id='mapbiomas'").fetchone()[0] == 1
     for t in ("mapbiomas_kelas", "mapbiomas_gabungan", "mapbiomas_tahunan", "v_mapbiomas_ringkas",
-              "transisi_kohort", "transisi_konsesi", "v_transisi_aliran", "transisi_pasangan"):
+              "transisi_kohort", "transisi_konsesi", "v_transisi_aliran", "transisi_pasangan",
+              "transisi_pasangan_aktif"):
         d = con.execute("SELECT deskripsi, metode FROM analysis_meta WHERE nama_tabel=?", (t,)).fetchone()
         assert d and "rezim" not in (d[0] + d[1]).lower()
 

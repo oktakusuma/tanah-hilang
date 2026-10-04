@@ -111,7 +111,7 @@ UMUR_BAKU = "-10:0,0:10"
 # 2001, 2009, 2024, langkah 2001->2009 HARUS dihitung langsung. Menjumlahkan
 # delapan langkah tahunan 2001->2002->...->2009 akan menghitung ganda piksel
 # yang berubah lalu kembali — dan itu bukan galat kecil: jumlah 23 langkah
-# tahunan 3.129.439 ha vs langsung 2001->2024 hanya 1.269.862 ha (rasio 2,46x).
+# tahunan 3.130.393 ha vs langsung 2001->2024 hanya 1.270.225 ha (rasio 2,46x).
 #
 # Bentuk agregat dipilih karena tampilan ini memang lintas-populasi: per
 # konsesi ukurannya ~4,7 juta baris, agregat hanya puluhan ribu.

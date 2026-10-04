@@ -44,9 +44,25 @@ CREATE TABLE izin_klasifikasi (
   dasar                 TEXT NOT NULL,
   durasi_sk             INTEGER,
   masa_berlaku_diwarisi INTEGER NOT NULL,
-  pra_izin_dominan      INTEGER
+  pra_izin_dominan      INTEGER,
+  tahun_mulai_indikasi  INTEGER
 );
 """
+
+
+def tahun_mulai_indikasi(kelas: str, tahun_izin) -> int | None:
+    """Tahun konsesi DIANGGAP mulai aktif menurut indikasi kelas izin — jam bersama
+    poligon peta & Sankey 'konsesi aktif' (permintaan istri user, 25 Sep 2026).
+
+    Aturan (identik T41C stata & garis hijau slide igoen): PERPANJANGAN → tahun_izin − 20
+    (SK yang tercatat diasumsikan perpanjangan satu jangka penuh UU 4/2009 Ps. 47);
+    IZIN_PERTAMA & TAK_DINILAI → tahun_izin apa adanya; tanpa tahun_izin → NULL.
+    KAVEAT WAJIB ikut tampil: ini INDIKASI — aturan −20 meleset pada 82% konsesi
+    PERPANJANGAN yang bisa diperiksa (median 14 th terlalu awal; lihat
+    docs/analisis/bukaan-tambang-harga-dan-umur.md §4.4)."""
+    if tahun_izin is None:
+        return None
+    return int(tahun_izin) - JANGKA_PENUH if kelas == "PERPANJANGAN" else int(tahun_izin)
 
 
 def vonis(jenis_izin, tahun_izin, tahap, durasi) -> tuple[str, str | None, str]:
@@ -88,6 +104,10 @@ def tulis_semua_meta(con) -> None:
         ("durasi_sk", "Jangka SK registri dalam tahun; NULL bila tanggal tak lengkap / tak cocok registri.", "tahun(tanggal_berakhir) − tahun(tanggal_berlaku)", "konsesi_registri"),
         ("masa_berlaku_diwarisi", "1 bila tahun tanggal_berlaku registri < tahun_izin (izin 'baru' membawa masa berlaku pendahulu).", "tahun(tanggal_berlaku) < tahun_izin", s),
         ("pra_izin_dominan", "1 bila >50% kehilangan Hansen jendela 2001–2024 terjadi sebelum tahun_izin; NULL bila tak ada kehilangan.", "hilang_pra_ha / (hilang_pra_ha + hilang_pasca_ha) > 0,5", "izin_laju"),
+        ("tahun_mulai_indikasi", "Tahun konsesi DIANGGAP mulai aktif menurut indikasi kelas izin — jam poligon peta & "
+         "Sankey 'konsesi aktif'. INDIKASI: aturan −20 meleset pada 82% konsesi PERPANJANGAN yang bisa diperiksa "
+         "(median 14 th terlalu awal; docs/analisis/bukaan-tambang-harga-dan-umur.md §4.4). NULL bila tanpa tahun_izin.",
+         "tahun_izin − 20 bila kelas = PERPANJANGAN; selainnya tahun_izin", s),
     ])
 
 
@@ -112,16 +132,23 @@ def main() -> int:
         pra, pasca = pra or 0.0, pasca or 0.0
         baris.append((kode, kelas, bukti, dasar, durasi,
                       int(y_b is not None and tahun_izin is not None and y_b < tahun_izin),
-                      None if (pra + pasca) <= 0 else int(pra / (pra + pasca) > 0.5)))
+                      None if (pra + pasca) <= 0 else int(pra / (pra + pasca) > 0.5),
+                      tahun_mulai_indikasi(kelas, tahun_izin)))
 
     con.execute("DROP TABLE IF EXISTS izin_klasifikasi")
     con.executescript(DDL)
-    con.executemany("INSERT INTO izin_klasifikasi VALUES (?,?,?,?,?,?,?)", baris)
+    con.executemany("INSERT INTO izin_klasifikasi VALUES (?,?,?,?,?,?,?,?)", baris)
     con.commit()
     tulis_semua_meta(con)
     sebaran = Counter((b[1], b[2]) for b in baris)
+    # Angka jangkar jam indikasi (himpunan minerba: 378 aktif ≤2001, 808 ≤2024 — T41C).
+    aktif_2001 = sum(1 for b in baris if b[7] is not None and b[7] <= 2001)
+    aktif_2024 = sum(1 for b in baris if b[7] is not None and b[7] <= 2024)
+    print(f"  jam indikasi: aktif ≤2001 = {aktif_2001}, ≤2024 = {aktif_2024}, tanpa tahun = "
+          f"{sum(1 for b in baris if b[7] is None)}")
     pastikan_v_konsesi(con, SKRIP)
     L.tandai_selesai(con, "03_izin", n_konsesi=len(baris),
+                     aktif_2001_indikasi=aktif_2001, aktif_2024_indikasi=aktif_2024,
                      sebaran="; ".join(f"{k}{'+' + b if b else ''}={n}" for (k, b), n in sorted(sebaran.items(), key=lambda x: str(x[0]))))
     con.close()
     print(f"03_izin selesai: {len(baris)} konsesi; sebaran " +

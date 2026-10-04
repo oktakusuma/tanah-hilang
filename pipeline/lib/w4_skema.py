@@ -61,7 +61,8 @@ DDL: dict[str, str] = {
     # §3
     "izin_klasifikasi": """CREATE TABLE izin_klasifikasi (
   kode_wiup TEXT PRIMARY KEY REFERENCES konsesi(kode_wiup), kelas TEXT NOT NULL, bukti TEXT,
-  dasar TEXT NOT NULL, durasi_sk INTEGER, masa_berlaku_diwarisi INTEGER NOT NULL, pra_izin_dominan INTEGER)""",
+  dasar TEXT NOT NULL, durasi_sk INTEGER, masa_berlaku_diwarisi INTEGER NOT NULL, pra_izin_dominan INTEGER,
+  tahun_mulai_indikasi INTEGER)""",
     # §4
     "mapbiomas_kelas": """CREATE TABLE mapbiomas_kelas (
   kelas INTEGER PRIMARY KEY, nama TEXT NOT NULL, kelompok TEXT NOT NULL, hex TEXT NOT NULL)""",
@@ -95,6 +96,13 @@ DDL: dict[str, str] = {
          COUNT(DISTINCT t.kode_wiup) AS n_konsesi, SUM(t.piksel) AS piksel, ROUND(SUM(t.ha),2) AS ha
   FROM transisi_konsesi t JOIN mapbiomas_kelas a ON a.kelas=t.kelas_awal JOIN mapbiomas_kelas b ON b.kelas=t.kelas_akhir
   GROUP BY t.label, t.kelas_awal, t.kelas_akhir""",
+    "transisi_pasangan_aktif": """CREATE TABLE transisi_pasangan_aktif (
+  tahun_awal INTEGER NOT NULL, tahun_akhir INTEGER NOT NULL,
+  baru_aktif INTEGER NOT NULL CHECK (baru_aktif IN (0, 1)),
+  kelas_awal INTEGER NOT NULL, kelas_akhir INTEGER NOT NULL,
+  n_konsesi INTEGER NOT NULL, piksel INTEGER NOT NULL, ha REAL NOT NULL,
+  PRIMARY KEY (tahun_awal, tahun_akhir, baru_aktif, kelas_awal, kelas_akhir),
+  CHECK (tahun_awal < tahun_akhir))""",
     "transisi_pasangan": """CREATE TABLE transisi_pasangan (
   tahun_awal INTEGER NOT NULL, tahun_akhir INTEGER NOT NULL,
   kelas_awal INTEGER NOT NULL, kelas_akhir INTEGER NOT NULL,
@@ -171,7 +179,7 @@ KOLOM: dict[str, list[str]] = {
     "izin_laju": ["kode_wiup", "tahun_izin", "hilang_pra_ha", "n_tahun_pra", "laju_pra_ha_thn",
                   "hilang_pasca_ha", "n_tahun_pasca", "laju_pasca_ha_thn", "rasio_pasca_pra", "vonis"],
     "izin_klasifikasi": ["kode_wiup", "kelas", "bukti", "dasar", "durasi_sk", "masa_berlaku_diwarisi",
-                         "pra_izin_dominan"],
+                         "pra_izin_dominan", "tahun_mulai_indikasi"],
     "mapbiomas_kelas": ["kelas", "nama", "kelompok", "hex"],
     "mapbiomas_gabungan": ["gabungan", "kelas", "keterangan"],
     "mapbiomas_tahunan": ["kode_wiup", "tahun", "kelas", "piksel", "ha"],
@@ -182,6 +190,7 @@ KOLOM: dict[str, list[str]] = {
     "v_transisi_aliran": ["label", "kelas_awal", "kelas_akhir", "nama_awal", "nama_akhir", "n_konsesi",
                           "piksel", "ha"],
     "transisi_pasangan": ["tahun_awal", "tahun_akhir", "kelas_awal", "kelas_akhir", "n_konsesi", "piksel", "ha"],
+    "transisi_pasangan_aktif": ["tahun_awal", "tahun_akhir", "baru_aktif", "kelas_awal", "kelas_akhir", "n_konsesi", "piksel", "ha"],
     "kawasan_hutan": ["kode_wiup", "fungsi_kode", "fungsi_nama", "luas_ha"],
     "ippkh": ["kode_wiup", "punya_ippkh", "punya_ippkh_tambang", "n_ippkh", "n_ippkh_tambang",
               "luas_irisan_ha", "luas_ippkh_sk_ha", "rasio_ippkh_thd_luas_sk", "tgl_ippkh_awal",
@@ -210,6 +219,7 @@ KOLOM: dict[str, list[str]] = {
         "hilang_pra_ha", "n_tahun_pra", "laju_pra_ha_thn", "hilang_pasca_ha", "n_tahun_pasca",
         "laju_pasca_ha_thn", "rasio_pasca_pra", "vonis",
         "kelas_izin", "bukti_izin", "durasi_sk", "masa_berlaku_diwarisi", "pra_izin_dominan",
+        "tahun_mulai_indikasi",
         "punya_ippkh", "punya_ippkh_tambang", "tgl_ippkh_awal",
         "keyakinan_pra_izin", "hilang_harapan_ha"],
 }

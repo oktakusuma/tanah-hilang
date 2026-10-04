@@ -156,11 +156,16 @@ CREATE TABLE izin_klasifikasi (            -- INDIKASI, bukan kepastian (eks kla
   dasar                 TEXT NOT NULL,
   durasi_sk             INTEGER,
   masa_berlaku_diwarisi INTEGER NOT NULL,
-  pra_izin_dominan      INTEGER
+  pra_izin_dominan      INTEGER,
+  tahun_mulai_indikasi  INTEGER            -- jam indikasi: PERPANJANGAN = tahun_izin - 20, selainnya tahun_izin; NULL tanpa tahun
 );
 ```
 Logika = `scripts/klasifikasi_perpanjangan.py` dengan input dari `konsesi` + `konsesi_registri`
 + `izin_laju.hilang_pra_ha`. Paritas: distribusi kelas/bukti = arsip `klasifikasi_izin`.
+`tahun_mulai_indikasi` (25 Sep 2026, permintaan penulis tesis): tahun konsesi DIANGGAP mulai
+aktif — jam bersama poligon peta & Sankey "konsesi aktif" (aturan = T41C stata; jangkar
+minerba: 378 aktif ≤2001, 808 ≤2024). KAVEAT: indikasi — aturan −20 meleset pada 82% konsesi
+PERPANJANGAN yang bisa diperiksa (docs/analisis/bukaan-tambang-harga-dan-umur.md §4.4).
 
 ---
 
@@ -211,7 +216,24 @@ CREATE TABLE transisi_pasangan (          -- agregat semua 276 pasangan tahun (a
   n_konsesi INTEGER NOT NULL, piksel INTEGER NOT NULL, ha REAL NOT NULL,
   PRIMARY KEY (tahun_awal, tahun_akhir, kelas_awal, kelas_akhir), CHECK (tahun_awal < tahun_akhir)
 );
+CREATE TABLE transisi_pasangan_aktif (    -- spt transisi_pasangan TAPI hanya konsesi AKTIF menurut jam indikasi
+  tahun_awal INTEGER NOT NULL, tahun_akhir INTEGER NOT NULL,
+  baru_aktif INTEGER NOT NULL CHECK (baru_aktif IN (0, 1)),    -- 1 = entran: baru aktif dalam (awal, akhir]
+  kelas_awal INTEGER NOT NULL, kelas_akhir INTEGER NOT NULL,
+  n_konsesi INTEGER NOT NULL, piksel INTEGER NOT NULL, ha REAL NOT NULL,
+  PRIMARY KEY (tahun_awal, tahun_akhir, baru_aktif, kelas_awal, kelas_akhir),
+  CHECK (tahun_awal < tahun_akhir)
+);
 ```
+`transisi_pasangan_aktif` (25 Sep 2026): konsesi ikut pasangan (a,b) bila
+`izin_klasifikasi.tahun_mulai_indikasi ≤ a` (`baru_aktif = 0`); yang baru aktif dalam (a,b]
+masuk dengan `baru_aktif = 1` dan `kelas_awal` = kelas lahannya yang SEBENARNYA pada a (sebelum
+izinnya mulai) — revisi 26 Sep 2026 menggantikan simpul semu `kelas_awal = -1`, supaya terbaca
+lahan apa yang dibawa masuk. Massa antar kolom seimbang, **tinggi kolom Sankey = luas konsesi
+aktif tahun itu** (diassert di skrip: Σ sisi asal `baru_aktif = 0` = komposisi tahun a utk aktif
+≤ a; Σ sisi asal `baru_aktif = 1` = komposisi tahun a utk a < mulai ≤ b; Σ sisi tujuan =
+komposisi tahun b utk aktif ≤ b; per sel, Σ kedua jenis ⊆ `transisi_pasangan`). Konsesi tanpa
+`tahun_izin` tak pernah masuk.
 Sumber: raster `data/external/mapbiomas/mapbiomas_c41_{2001..2024}.tif` (manifest MD5
 `scripts/mapbiomas/manifest_c41_2000_2024.csv`), geometri dari **`konsesi` DB target** (bukan
 `kalimantan.db`). Logika = `scripts/mapbiomas/landuse_konsesi.py` + `transisi_konsesi.py`

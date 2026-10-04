@@ -102,7 +102,7 @@ def buat_db_sintetis(path: Path, himpunan: str = "minerba") -> Path:
         else:
             npra = thn - S.TAHUN_AWAL; npas = S.TAHUN_AKHIR - thn + 1
             ex("INSERT INTO izin_laju VALUES (?,?,?,?,?,?,?,?,?,?)", (k, thn, per * npra, npra, per, per * npas, npas, per, 1.0, vonis))
-        ex("INSERT INTO izin_klasifikasi VALUES (?,?,?,?,?,?,?)", (k, "IZIN_PERTAMA", "INDIKASI", "uji", 10, 0, 0))
+        ex("INSERT INTO izin_klasifikasi VALUES (?,?,?,?,?,?,?,?)", (k, "IZIN_PERTAMA", "INDIKASI", "uji", 10, 0, 0, thn))
         ex("INSERT INTO ippkh VALUES (?,?,?,?,?,?,?,?,?,?,?)", (k, 1 if k != "K2" else 0, 1 if k == "K1" else 0, 1, 1, 10.0, 12.0, 0.01, "2012-01-01", None, 1))
         ex("INSERT INTO keyakinan_pra_izin VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
            (k, thn, "IZIN_PERTAMA", 10, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0.4, 0.5, 0.5, tot, tot / 2, tot * 0.75))

@@ -168,6 +168,51 @@ def cek_sumber(con, lap):
         lap.ok("sumber", f"{len(ids)} sumber tercatat: {', '.join(sorted(ids))}")
 
 
+# Kartu provenansi Geoportal di halaman Metodologi menulis jumlah fitur hasil unduhan APA ADANYA
+# (angka itu hidup di MANIFEST.csv, bukan di DB, jadi tak bisa lewat rantai dashboard-stats.json).
+# Tanpa pemeriksaan ini, unduh ulang Geoportal membuat kartu itu salah diam-diam.
+MANIFEST_GEOPORTAL = AKAR / "data/geoportal/MANIFEST.csv"
+KARTU_METODOLOGI = AKAR / "webapp/src/views/MethodologyView.tsx"
+# berkas MANIFEST → potongan kalimat yang HARUS ada di kartu (mis. 397 → "397 poligon operasi")
+FRASA_KARTU = {
+    "ippkh_operasi.geojson": "{n} poligon operasi",
+    "ippkh_eksplorasi.geojson": "{n} eksplorasi",
+    "overlay_hutan.geojson": "{n} fitur",
+}
+
+
+def _ribuan(n: int) -> str:
+    """Format Indonesia: 3962 → '3.962' (kartu memakai titik sbg pemisah ribuan)."""
+    return f"{n:,}".replace(",", ".")
+
+
+def cek_kartu_metodologi(lap):
+    if not MANIFEST_GEOPORTAL.is_file() or not KARTU_METODOLOGI.is_file():
+        lap.warn("kartu-metodologi",
+                 "MANIFEST.csv atau MethodologyView.tsx tak ada — kesegaran kartu Geoportal tak diperiksa")
+        return
+    import csv
+    n_fitur = {r["berkas"]: int(r["n_fitur"])
+               for r in csv.DictReader(MANIFEST_GEOPORTAL.open(encoding="utf-8"))}
+    teks = KARTU_METODOLOGI.read_text(encoding="utf-8")
+    hilang = []
+    for berkas, pola in FRASA_KARTU.items():
+        if berkas not in n_fitur:
+            hilang.append(f"{berkas} tak ada di MANIFEST")
+            continue
+        n = n_fitur[berkas]
+        if pola.format(n=n) not in teks and pola.format(n=_ribuan(n)) not in teks:
+            hilang.append(f"{berkas}: MANIFEST {_ribuan(n)}, kartu tak menyebutnya")
+    if hilang:
+        lap.fail("kartu-metodologi",
+                 "kartu Geoportal tak sinkron dgn MANIFEST.csv (unduh ulang tanpa memperbarui kartu?): "
+                 + "; ".join(hilang))
+    else:
+        lap.ok("kartu-metodologi",
+               "jumlah fitur Geoportal di kartu Metodologi cocok MANIFEST.csv ("
+               + ", ".join(f"{b.split('.')[0]}={_ribuan(n_fitur[b])}" for b in FRASA_KARTU) + ")")
+
+
 def cek_rujukan(con, lap):
     objek = S.objek_di_db(con)
     yatim = []
@@ -655,6 +700,7 @@ def jalankan(db: Path, himpunan: str, stats: Path | None, arsip: Path | None, ar
     cek_meta(con, lap)
     cek_bangun(con, lap, himpunan)
     cek_sumber(con, lap)
+    cek_kartu_metodologi(lap)
     cek_rujukan(con, lap)
     cek_hansen(con, lap)
     cek_izin_laju(con, lap)

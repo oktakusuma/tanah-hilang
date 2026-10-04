@@ -15,6 +15,14 @@ KELUARAN (milik skrip ini; di-drop & dibuat ulang → idempoten):
   transisi_konsesi   per konsesi × label kohort × (kelas_awal, kelas_akhir) → piksel, ha
   v_transisi_aliran  agregat per label (nama kelas di-JOIN dari mapbiomas_kelas, tak disimpan ganda)
   transisi_pasangan  agregat SEMUA 276 pasangan tahun a<b dalam 2001–2024 — tampilan "tahun dinamis"
+  transisi_pasangan_aktif  seperti transisi_pasangan, TETAPI hanya konsesi yang SUDAH AKTIF
+                     menurut jam indikasi (izin_klasifikasi.tahun_mulai_indikasi ≤ tahun_awal) —
+                     permintaan istri user 25 Sep 2026: tinggi kolom Sankey = luas konsesi aktif
+                     tahun itu. Konsesi yang BARU aktif di antara kedua tahun masuk lewat baris
+                     baru_aktif = 1 dengan kelas_awal = kelas lahannya yang SEBENARNYA pada
+                     tahun_awal (sebelum izinnya mulai) — revisi 26 Sep: simpul abu "baru aktif"
+                     (-1) tak memberi tahu lahan apa yang dibawa masuk. Massa kolom tetap seimbang.
+                     Konsesi tanpa tahun_izin (7 di minerba) tak pernah masuk — catat sbg n_keluar.
 
 KOHORT. `2001-2024` (kalender, semua konsesi); `umur-10_+0` dan `umur+0_+10` (relatif tahun
 izin, t0 = max(tahun_izin, 2001)); konsesi yang salah satu ujung jendelanya di luar
@@ -55,6 +63,7 @@ TAK_INFORMATIF = (mb.KELAS_NODATA, mb.KELAS_AWAN)
 
 DDL = """
 DROP VIEW  IF EXISTS v_transisi_aliran;
+DROP TABLE IF EXISTS transisi_pasangan_aktif;
 DROP TABLE IF EXISTS transisi_pasangan;
 DROP TABLE IF EXISTS transisi_konsesi;
 DROP TABLE IF EXISTS transisi_kohort;
@@ -80,6 +89,14 @@ CREATE TABLE transisi_pasangan (
   kelas_awal INTEGER NOT NULL, kelas_akhir INTEGER NOT NULL,
   n_konsesi INTEGER NOT NULL, piksel INTEGER NOT NULL, ha REAL NOT NULL,
   PRIMARY KEY (tahun_awal, tahun_akhir, kelas_awal, kelas_akhir), CHECK (tahun_awal < tahun_akhir)
+);
+CREATE TABLE transisi_pasangan_aktif (
+  tahun_awal INTEGER NOT NULL, tahun_akhir INTEGER NOT NULL,
+  baru_aktif INTEGER NOT NULL CHECK (baru_aktif IN (0, 1)),    -- 1 = konsesi baru aktif dalam (awal, akhir]
+  kelas_awal INTEGER NOT NULL, kelas_akhir INTEGER NOT NULL,
+  n_konsesi INTEGER NOT NULL, piksel INTEGER NOT NULL, ha REAL NOT NULL,
+  PRIMARY KEY (tahun_awal, tahun_akhir, baru_aktif, kelas_awal, kelas_akhir),
+  CHECK (tahun_awal < tahun_akhir)
 );
 """
 
@@ -122,11 +139,17 @@ def susun_kohort(kode_ada: list[str], t0: dict[str, int]):
     return kohort, tugas
 
 
-def hitung(berkas, konsesi, tugas):
+def hitung(berkas, konsesi, tugas, mulai_aktif):
     """Satu lintasan per konsesi: baca 24 tahun sekali, lalu semua tabulasi silang di memori.
-    → (baris transisi_konsesi, baris transisi_pasangan)."""
+    → (baris transisi_konsesi, baris transisi_pasangan, baris transisi_pasangan_aktif).
+
+    `mulai_aktif`: kode → tahun_mulai_indikasi (None = tanpa tahun izin, tak pernah masuk
+    varian aktif). Utk pasangan (ya, yb): mulai ≤ ya → transisi ikut agregat aktif dgn
+    baru_aktif = 0; ya < mulai ≤ yb → transisi yang SAMA (kelas di ya → kelas di yb) masuk dgn
+    baru_aktif = 1 — sisi asalnya = lahan yang dibawa masuk konsesi baru, bukan simpul semu."""
     per_konsesi: list[tuple] = []
     agg: dict[tuple[int, int, int, int], list] = {}
+    agg_aktif: dict[tuple[int, int, int, int, int], list] = {}
     ds = {y: rasterio.open(p) for y, p in berkas.items()}
     mulai = time.time()
     try:
@@ -142,23 +165,33 @@ def hitung(berkas, konsesi, tugas):
                     if ka == mb.KELAS_NODATA and kb == mb.KELAS_NODATA:
                         continue                                  # laut ↔ laut
                     per_konsesi.append((kode, label, ya, yb, ka, kb, int(px[k]), round(float(ha[k]), 4)))
+            m_aktif = mulai_aktif.get(kode)
             for ya, yb in PASANGAN:
                 px, ha = silang(nilai[ya], nilai[yb], luas)
+                # 0 = sudah aktif sejak ya; 1 = baru aktif dalam (ya, yb]; None = belum/tak pernah
+                baru = (None if m_aktif is None or m_aktif > yb
+                        else 0 if m_aktif <= ya else 1)
                 for k in np.nonzero(px)[0]:
                     ka, kb = divmod(int(k), PENGALI)
                     if ka == mb.KELAS_NODATA and kb == mb.KELAS_NODATA:
                         continue
                     s = agg.setdefault((ya, yb, ka, kb), [0, 0.0, 0])
                     s[0] += int(px[k]); s[1] += float(ha[k]); s[2] += 1
+                    if baru is not None:
+                        s2 = agg_aktif.setdefault((ya, yb, baru, ka, kb), [0, 0.0, 0])
+                        s2[0] += int(px[k]); s2[1] += float(ha[k]); s2[2] += 1
             if n % 50 == 0 or n == len(konsesi):
                 print(f"  {n}/{len(konsesi)} konsesi, {len(per_konsesi):,} baris kohort, "
-                      f"{len(agg):,} sel pasangan ({time.time() - mulai:,.0f} s)", flush=True)
+                      f"{len(agg):,} sel pasangan, {len(agg_aktif):,} sel aktif "
+                      f"({time.time() - mulai:,.0f} s)", flush=True)
     finally:
         for d in ds.values():
             d.close()
     pasangan = [(ya, yb, ka, kb, n_k, px, round(ha, 4))
                 for (ya, yb, ka, kb), (px, ha, n_k) in sorted(agg.items())]
-    return per_konsesi, pasangan
+    pasangan_aktif = [(ya, yb, baru, ka, kb, n_k, px, round(ha, 4))
+                      for (ya, yb, baru, ka, kb), (px, ha, n_k) in sorted(agg_aktif.items())]
+    return per_konsesi, pasangan, pasangan_aktif
 
 
 def rekonsiliasi(con, kohort, tugas) -> dict[str, float]:
@@ -214,6 +247,61 @@ def rekonsiliasi(con, kohort, tugas) -> dict[str, float]:
     if a[1] != b[1] or abs((a[0] or 0) - (b[0] or 0)) > 0.5:
         gagal(f"transisi_pasangan (2001,2024) {a} != transisi_konsesi label 2001-2024 {b}")
     return hasil
+
+
+TOL_AKTIF_HA = 0.5   # Σ per pasangan; baris dibulatkan 4 desimal → galat akumulasi kecil
+
+
+def rekonsiliasi_aktif(con) -> float:
+    """Invarian transisi_pasangan_aktif — gagal keras bila meleset:
+    (1) 276 pasangan lengkap; (2) tiap pasangan: Σ sisi asal baru_aktif = 0 (tanpa 0/27) =
+    komposisi MapBiomas tahun_awal utk konsesi aktif ≤ tahun_awal; Σ sisi asal baru_aktif = 1
+    = komposisi tahun_awal utk konsesi dgn tahun_awal < mulai ≤ tahun_akhir (lahan yang dibawa
+    masuk); Σ sisi tujuan (kedua jenis) = komposisi tahun_akhir utk aktif ≤ tahun_akhir —
+    inilah jaminan 'tinggi kolom = luas konsesi aktif'; (3) per sel (a,b,ka,kb), Σ kedua
+    jenis ≤ sel transisi_pasangan (subset)."""
+    n_pas = con.execute("SELECT COUNT(DISTINCT tahun_awal*10000+tahun_akhir) FROM transisi_pasangan_aktif").fetchone()[0]
+    if n_pas != len(PASANGAN):
+        gagal(f"transisi_pasangan_aktif punya {n_pas} pasangan tahun, harus {len(PASANGAN)}")
+    exp = {int(t): float(h) for t, h in con.execute("""
+        SELECT m.tahun, SUM(m.ha) FROM mapbiomas_tahunan m
+        JOIN izin_klasifikasi z USING (kode_wiup)
+        WHERE m.kelas NOT IN (0, 27) AND z.tahun_mulai_indikasi IS NOT NULL
+          AND z.tahun_mulai_indikasi <= m.tahun
+        GROUP BY m.tahun""")}
+    exp_baru = {(int(a), int(b)): float(h) for a, b, h in con.execute("""
+        WITH pas AS (SELECT DISTINCT tahun_awal, tahun_akhir FROM transisi_pasangan_aktif)
+        SELECT pas.tahun_awal, pas.tahun_akhir, SUM(m.ha)
+        FROM pas JOIN izin_klasifikasi z
+          ON z.tahun_mulai_indikasi > pas.tahun_awal AND z.tahun_mulai_indikasi <= pas.tahun_akhir
+        JOIN mapbiomas_tahunan m ON m.kode_wiup = z.kode_wiup AND m.tahun = pas.tahun_awal
+        WHERE m.kelas NOT IN (0, 27)
+        GROUP BY 1, 2""")}
+    maks = 0.0
+    for ya, yb, awal, awal_baru, akhir in con.execute("""
+            SELECT tahun_awal, tahun_akhir,
+                   SUM(CASE WHEN baru_aktif = 0 AND kelas_awal NOT IN (0,27) THEN ha END),
+                   SUM(CASE WHEN baru_aktif = 1 AND kelas_awal NOT IN (0,27) THEN ha END),
+                   SUM(CASE WHEN kelas_akhir NOT IN (0,27) THEN ha END)
+            FROM transisi_pasangan_aktif GROUP BY 1, 2"""):
+        d = max(abs((awal or 0.0) - exp.get(ya, 0.0)), abs((akhir or 0.0) - exp.get(yb, 0.0)),
+                abs((awal_baru or 0.0) - exp_baru.get((ya, yb), 0.0)))
+        maks = max(maks, d)
+        if d > TOL_AKTIF_HA:
+            gagal(f"rekonsiliasi aktif ({ya},{yb}): asal {awal} vs harapan {exp.get(ya)}; "
+                  f"asal baru-aktif {awal_baru} vs {exp_baru.get((ya, yb))}; "
+                  f"tujuan {akhir} vs {exp.get(yb)}")
+    lebih = con.execute("""
+        SELECT COUNT(*) FROM (
+          SELECT tahun_awal, tahun_akhir, kelas_awal, kelas_akhir, SUM(ha) ha, SUM(piksel) piksel
+          FROM transisi_pasangan_aktif GROUP BY 1, 2, 3, 4) a
+        JOIN transisi_pasangan p USING (tahun_awal, tahun_akhir, kelas_awal, kelas_akhir)
+        WHERE a.ha > p.ha + 0.01 OR a.piksel > p.piksel""").fetchone()[0]
+    if lebih:
+        gagal(f"{lebih} sel transisi_pasangan_aktif melebihi transisi_pasangan — subset dilanggar")
+    print(f"  rekonsiliasi aktif: {len(PASANGAN)} pasangan, selisih maks {maks:.4f} ha "
+          f"(tinggi kolom = luas konsesi aktif terjamin)")
+    return maks
 
 
 def tulis_meta_semua(con) -> None:
@@ -277,6 +365,40 @@ def tulis_meta_semua(con) -> None:
                    ("piksel", "Total piksel lintas konsesi.", "SUM(piksel)", "transisi_konsesi"),
                    ("ha", "Total luas lintas konsesi (hektar).", "ROUND(SUM(ha), 2)", "transisi_konsesi"),
                ])
+    tulis_meta(con, "transisi_pasangan_aktif",
+               deskripsi=("Seperti transisi_pasangan, TETAPI hanya konsesi yang SUDAH AKTIF menurut jam "
+                          "indikasi (izin_klasifikasi.tahun_mulai_indikasi <= tahun_awal) — tinggi kolom "
+                          "Sankey = luas konsesi aktif tahun itu (permintaan penulis tesis, 25 Sep 2026). "
+                          "Baris baru_aktif = 1 = konsesi yang baru aktif dalam (tahun_awal, tahun_akhir]; "
+                          "kelas_awal-nya = kelas lahan SEBENARNYA pada tahun_awal (sebelum izin mulai), "
+                          "sehingga terbaca lahan apa yang dibawa masuk dan massa antar kolom seimbang "
+                          "(revisi 26 Sep 2026, menggantikan simpul abu -1). KAVEAT WAJIB: jam ini "
+                          "INDIKASI (PERPANJANGAN = tahun_izin - 20; meleset pada 82% konsesi PERPANJANGAN "
+                          "yang bisa diperiksa — docs/analisis/bukaan-tambang-harga-dan-umur.md §4.4); "
+                          "konsesi tanpa tahun_izin tak pernah masuk."),
+               sumber=sumber + "; izin_klasifikasi.tahun_mulai_indikasi (jam indikasi)",
+               metode=("Lintasan raster yang sama dgn transisi_pasangan; per pasangan (a,b) dan konsesi: "
+                       "bincount(kelas_a*100 + kelas_b) dicatat dgn baru_aktif = 0 bila mulai <= a, "
+                       "baru_aktif = 1 bila a < mulai <= b, dilewati bila mulai > b / tanpa tahun. "
+                       "Invarian diassert: Sigma sisi asal baru_aktif=0 = komposisi MapBiomas tahun a utk "
+                       "aktif <= a; Sigma sisi asal baru_aktif=1 = komposisi tahun a utk a < mulai <= b; "
+                       "Sigma sisi tujuan = komposisi tahun b utk aktif <= b; per sel, Sigma kedua jenis "
+                       "subset transisi_pasangan."),
+               skrip=SKRIP, lisensi=lis,
+               kolom=[
+                   ("tahun_awal", "Tahun sisi asal.", "-", SKRIP),
+                   ("tahun_akhir", "Tahun sisi tujuan (selalu > tahun_awal).", "-", SKRIP),
+                   ("baru_aktif", "1 = konsesi baru aktif dalam (tahun_awal, tahun_akhir] menurut jam "
+                    "indikasi — sisi asalnya = lahan yang dibawa masuk; 0 = sudah aktif sejak tahun_awal.",
+                    "tahun_awal < tahun_mulai_indikasi <= tahun_akhir", "izin_klasifikasi"),
+                   ("kelas_awal", "Kode kelas MapBiomas di tahun_awal (0 = nodata). Utk baru_aktif = 1: "
+                    "kondisi lahan sebelum izin mulai.", "-", "mapbiomas_kelas"),
+                   ("kelas_akhir", "Kode kelas MapBiomas di tahun_akhir (0 = nodata).", "-", "mapbiomas_kelas"),
+                   ("n_konsesi", "Banyak konsesi aktif yang punya aliran ini pada pasangan tahun itu.", "COUNT konsesi", SKRIP),
+                   ("piksel", "Cacah piksel lintas konsesi aktif.", "Σ bincount per konsesi", SKRIP),
+                   ("ha", "Luas lintas konsesi aktif (hektar). Aliran ke/dari Lubang Tambang = BATAS BAWAH.",
+                    "Σ luas piksel, koreksi cos(lintang)", SKRIP),
+               ])
     tulis_meta(con, "transisi_pasangan",
                deskripsi=("SEMUA pasangan tahun (a<b) dalam 2001-2024 (276 pasangan) — AGREGAT lintas konsesi, "
                           "tanpa kode_wiup. Menghidupi tampilan 'tahun dinamis': tiap langkah dibaca LANGSUNG "
@@ -302,14 +424,20 @@ def main() -> int:
     ap = argparser("05 — transisi_kohort, transisi_konsesi, v_transisi_aliran, transisi_pasangan")
     a = ap.parse_args()
     con = buka(a.db)
-    wajib_tabel(con, "konsesi", "mapbiomas_tahunan", "mapbiomas_kelas")
+    wajib_tabel(con, "konsesi", "mapbiomas_tahunan", "mapbiomas_kelas", "izin_klasifikasi")
     mb.cek_himpunan(con, a.himpunan)
     mb.hash_geometri_cocok(con)
     berkas = mb.wajib_raster()
 
     konsesi_semua = mb.baca_konsesi(con)
     t0 = {k: max(t, mb.TAHUN_MIN) for k, _, t in konsesi_semua if t is not None}
-    print(f"{len(konsesi_semua)} konsesi (himpunan {a.himpunan}); {len(t0)} punya tahun_izin")
+    # Jam indikasi utk varian "konsesi aktif" (tahun_mulai_indikasi, boleh < 2001 — konsesi
+    # itu berarti aktif sejak awal jendela; None = tanpa tahun izin, tak pernah masuk).
+    mulai_aktif = {k: (int(v) if v is not None else None) for k, v in con.execute(
+        "SELECT kode_wiup, tahun_mulai_indikasi FROM izin_klasifikasi")}
+    n_tanpa = sum(1 for v in mulai_aktif.values() if v is None)
+    print(f"{len(konsesi_semua)} konsesi (himpunan {a.himpunan}); {len(t0)} punya tahun_izin; "
+          f"jam indikasi: {n_tanpa} tanpa tahun (tak masuk varian aktif)")
 
     ref = mb.buka_raster_tercek(berkas)
     konsesi, luar = mb.siapkan_konsesi(konsesi_semua, ref)
@@ -319,7 +447,7 @@ def main() -> int:
     for _, label, _, _, n, keluar, _ in kohort:
         print(f"  {label}: {n} masuk, {keluar} keluar")
 
-    per_konsesi, pasangan = hitung(berkas, konsesi, tugas)
+    per_konsesi, pasangan, pasangan_aktif = hitung(berkas, konsesi, tugas, mulai_aktif)
 
     # Koreksi n_konsesi kohort ke konsesi yang BENAR-BENAR berkontribusi baris. Konsesi yang
     # lolos saringan bbox tapi nol piksel saat topeng diterapkan (mis. WIUP PASIR LAUT yang
@@ -342,19 +470,24 @@ def main() -> int:
     con.executemany("INSERT INTO transisi_kohort VALUES (?,?,?,?,?,?,?)", kohort)
     con.executemany("INSERT INTO transisi_konsesi VALUES (?,?,?,?,?,?,?,?)", per_konsesi)
     con.executemany("INSERT INTO transisi_pasangan VALUES (?,?,?,?,?,?,?)", pasangan)
+    con.executemany("INSERT INTO transisi_pasangan_aktif VALUES (?,?,?,?,?,?,?,?)", pasangan_aktif)
     try:
         rekon = rekonsiliasi(con, kohort, tugas)
+        rekon_aktif = rekonsiliasi_aktif(con)
     except SystemExit:
         con.rollback()
         raise
     tulis_meta_semua(con)
     tandai_selesai(con, "05_transisi", n_konsesi=len(konsesi), n_tanpa_piksel=len(luar),
                    n_baris_konsesi=len(per_konsesi), n_baris_pasangan=len(pasangan),
+                   n_baris_pasangan_aktif=len(pasangan_aktif), n_tanpa_jam_aktif=n_tanpa,
                    n_pasangan_tahun=len(PASANGAN), himpunan=a.himpunan,
-                   rekonsiliasi_selisih_maks_ha=f"{max(rekon.values()):.4f}")
+                   rekonsiliasi_selisih_maks_ha=f"{max(rekon.values()):.4f}",
+                   rekonsiliasi_aktif_maks_ha=f"{rekon_aktif:.4f}")
     con.close()
     print(f"\nSelesai: {len(per_konsesi):,} baris transisi_konsesi, {len(kohort)} kohort, "
-          f"{len(pasangan):,} baris transisi_pasangan ({len(PASANGAN)} pasangan) → {a.db}")
+          f"{len(pasangan):,} baris transisi_pasangan + {len(pasangan_aktif):,} baris "
+          f"transisi_pasangan_aktif ({len(PASANGAN)} pasangan) → {a.db}")
     return 0
 
 

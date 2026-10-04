@@ -137,6 +137,7 @@ CREATE VIEW v_konsesi AS
          h.hutan_2000_ha, h.hilang_2001_2024_ha, h.pct_hutan_2000, h.tahun_puncak, h.tile_hansen,
          l.hilang_pra_ha, l.n_tahun_pra, l.laju_pra_ha_thn, l.hilang_pasca_ha, l.n_tahun_pasca, l.laju_pasca_ha_thn, l.rasio_pasca_pra, l.vonis,
          z.kelas AS kelas_izin, z.bukti AS bukti_izin, z.durasi_sk, z.masa_berlaku_diwarisi, z.pra_izin_dominan,
+         z.tahun_mulai_indikasi,
          i.punya_ippkh, i.punya_ippkh_tambang, i.tgl_ippkh_awal,
          y.peluang_akhir AS keyakinan_pra_izin, y.hilang_harapan_ha
   FROM konsesi k
@@ -173,6 +174,7 @@ _KOLOM_V = [
     ("rasio_pasca_pra", "Rasio laju pasca/pra.", "izin_laju.rasio_pasca_pra", "izin_laju"),
     ("vonis", "Vonis laju pra vs pasca izin.", "izin_laju.vonis", "izin_laju"),
     ("kelas_izin", "Kelas izin (IZIN_PERTAMA/PERPANJANGAN/TAK_DINILAI) — indikasi.", "izin_klasifikasi.kelas", "izin_klasifikasi"),
+    ("tahun_mulai_indikasi", "Tahun konsesi dianggap mulai aktif menurut indikasi kelas izin (PERPANJANGAN: tahun_izin − 20) — jam poligon peta; INDIKASI, bukan kepastian.", "izin_klasifikasi.tahun_mulai_indikasi", "izin_klasifikasi"),
     ("bukti_izin", "Kekuatan bukti kelas izin (KUAT/INDIKASI).", "izin_klasifikasi.bukti", "izin_klasifikasi"),
     ("durasi_sk", "Jangka SK registri, tahun.", "izin_klasifikasi.durasi_sk", "izin_klasifikasi"),
     ("masa_berlaku_diwarisi", "1 bila tahun berlaku registri < tahun_izin.", "izin_klasifikasi.masa_berlaku_diwarisi", "izin_klasifikasi"),

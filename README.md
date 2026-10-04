@@ -154,9 +154,9 @@ geojson dari minerba); **10** per himpunan.
 | 00 | `00_prasyarat.py` | raster Hansen, raster MapBiomas + manifest MD5, geojson Geoportal + `MANIFEST.csv`, `wiup/kalimantan_unique.geojson`, `minerba-kalimantan.db`, `kepadatan_penduduk.csv`, batch CSV | tidak menulis apa pun — **gagal keras** + daftar yang kurang |
 | 01 | `01_identitas.py` | geojson WIUP (1.765; disaring `lib/himpunan.py`), `minerba-kalimantan.db` (`perizinan`, `badan_usaha`), `kepadatan_penduduk.csv`, `geoportal/overlay_hutan.geojson` | `sumber`, `bangun` (hash geometri, n konsesi), **`konsesi`**, **`konsesi_registri`** (SK-persis + pencocokan T1–T4), `kepadatan_penduduk` |
 | 02 | `02_hansen.py` | `analysis/batch_KALIMANTAN_t30_wide.csv`, `konsesi` | **`hansen_ringkas`**, **`hansen_tahunan`** (2001–2024), **`izin_laju`** (laju pra/pasca tahun izin + vonis) |
-| 03 | `03_izin.py` | `konsesi`, `konsesi_registri`, `izin_laju` | **`izin_klasifikasi`** (IZIN_PERTAMA / PERPANJANGAN / TAK_DINILAI × KUAT / INDIKASI) |
+| 03 | `03_izin.py` | `konsesi`, `konsesi_registri`, `izin_laju` | **`izin_klasifikasi`** (IZIN_PERTAMA / PERPANJANGAN / TAK_DINILAI × KUAT / INDIKASI; + `tahun_mulai_indikasi` = jam indikasi, PERPANJANGAN = `tahun_izin` − 20) |
 | 04 | `04_mapbiomas.py` | raster MapBiomas 2001–2024, geometri **dari tabel `konsesi` DB target** | **`mapbiomas_kelas`**, **`mapbiomas_gabungan`**, **`mapbiomas_tahunan`**, view `v_mapbiomas_ringkas`; menulis `bangun.mapbiomas.hash_geometri` |
-| 05 | `05_transisi.py` | raster MapBiomas, `konsesi.tahun_izin` | **`transisi_kohort`**, **`transisi_konsesi`**, **`transisi_pasangan`** (276 pasangan tahun), view `v_transisi_aliran` — bahan diagram Sankey |
+| 05 | `05_transisi.py` | raster MapBiomas, `konsesi.tahun_izin` | **`transisi_kohort`**, **`transisi_konsesi`**, **`transisi_pasangan`** (276 pasangan tahun), **`transisi_pasangan_aktif`** (hanya konsesi aktif menurut jam indikasi; `baru_aktif = 1` = entran), view `v_transisi_aliran` — bahan diagram Sankey |
 | 06 | `06_kawasan_hutan.py` | `geoportal/*.geojson` + `MANIFEST.csv`, `konsesi` | **`kawasan_hutan`**, **`ippkh`**, **`ippkh_irisan`** |
 | 07 | `07_umur_izin.py` | `konsesi.tahun_izin`, `hansen_ringkas`, `hansen_tahunan` | **`umur_izin_kurun`**, **`umur_izin_tahunan`**, **`umur_izin_konsesi`** |
 | 08 | `08_keyakinan.py` | `konsesi`, `izin_klasifikasi`, `ippkh`, `hansen_tahunan`, `mapbiomas_tahunan` kelas 30, `konsesi_registri` | **`keyakinan_pra_izin`**, **`keyakinan_model`**, **`keyakinan_ringkas`** |
@@ -252,7 +252,7 @@ sitasi). Itulah sebabnya turunan Hansen (CC BY 4.0) dan turunan MapBiomas (**CC 
 | `izin_klasifikasi` | apakah `tahun_izin` tampak izin PERTAMA atau PERPANJANGAN, + kekuatan bukti | turunan campuran |
 | `mapbiomas_kelas` / `mapbiomas_gabungan` | legenda resmi C4.1 + kategori gabungan buatan sendiri (mis. "Pertanian non-sawit" = kelas 9+21+40) yang **wajib diberi keterangan** saat dipakai | CC BY-SA 4.0 |
 | `mapbiomas_tahunan` (+ view `v_mapbiomas_ringkas`) | komposisi kelas guna lahan per konsesi × tahun × kelas (piksel & ha) | **CC BY-SA 4.0** |
-| `transisi_kohort` / `transisi_konsesi` / `transisi_pasangan` (+ view `v_transisi_aliran`) | aliran guna lahan kelas asal → kelas tujuan di dalam konsesi (bahan Sankey); `transisi_pasangan` memuat 276 pasangan tahun dan **tidak boleh dijumlahkan antar langkah** | **CC BY-SA 4.0** |
+| `transisi_kohort` / `transisi_konsesi` / `transisi_pasangan` / `transisi_pasangan_aktif` (+ view `v_transisi_aliran`) | aliran guna lahan kelas asal → kelas tujuan di dalam konsesi (bahan Sankey); `transisi_pasangan` memuat 276 pasangan tahun dan **tidak boleh dijumlahkan antar langkah** | **CC BY-SA 4.0** |
 | `kawasan_hutan` / `ippkh` / `ippkh_irisan` | fungsi kawasan hutan di dalam konsesi; potret IPPKH **aktif** (batas bawah, bukan register sejarah) + audit irisan spasial vs kecocokan nama | data publik pemerintah |
 | `umur_izin_kurun` / `umur_izin_tahunan` / `umur_izin_konsesi` | laju kehilangan menurut **umur izin** (bukan tahun kalender), dua rancangan kohort: `A_seimbang` & `B_semua` | CC BY 4.0 |
 | `keyakinan_pra_izin` / `keyakinan_model` / `keyakinan_ringkas` | peluang terkalibrasi bahwa sebuah konsesi **sudah beroperasi sebelum `tahun_izin`**, plus atribusi kehilangan berikut selang bootstrap-nya | turunan campuran |
@@ -360,6 +360,22 @@ warna per tahun yang disalin persis dari peta web (`MIN_VALUE = 1`, `MAX_VALUE =
 clip Anda, lalu jalankan dari Python Console QGIS dan aktifkan *Temporal Controller*
 rentang 2001-01-01 → 2025-01-01, step 1 tahun. Skrip ini hanya jalan di dalam QGIS
 (butuh modul `qgis.core`).
+
+**Poligon tidak valid.** Satu dari 825 poligon (`kode_wiup` 3363013032014050) memotong
+dirinya sendiri; GDAL 3.12 menolak clip dengan pesan *Cutline polygon is invalid*. Jalankan
+dulu *Processing Toolbox → Fix geometries* pada layer konsesi dan pakai hasilnya sebagai
+mask — luasnya tidak berubah.
+
+**Tutupan lahan MapBiomas.** `scripts/qgis_palet_mapbiomas.py` membuat berkas palet
+(`nilai R G B alfa label`, dari tabel `mapbiomas_kelas`) untuk *Symbology → Paletted/Unique
+values → … → Load Color Map from File…*; keluarannya ditulis ke `webapp/public/qgis/`
+(folder dibuat otomatis). `scripts/qgis_mapbiomas_slider.py` membuat MapBiomas ikut
+*Temporal Controller*: 24 layer 2001–2024, masing-masing dengan rentang waktunya sendiri,
+gaya disalin dari satu layer yang sudah diwarnai (`STYLE_DARI`). Rasternya dibaca dari
+unduhan `fetch_mapbiomas_lulc.py` (`SUMBER = "lokal"`) atau langsung dari bucket MapBiomas
+(`SUMBER = "cloud"`); `POTONG_KE` opsional memotong tiap tahun ke batas konsesi setelah
+poligonnya dibetulkan dan dilebur jadi satu (poligon tumpang-tindih membuat GDAL 3.8 gagal
+memotong tanpa pesan jelas).
 
 ---
 

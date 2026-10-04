@@ -125,6 +125,24 @@ def test_jumlah_baris(con, him):
     assert con.execute("SELECT MIN(tahun), MAX(tahun) FROM hansen_tahunan").fetchone() == (2001, 2024)
 
 
+def test_tahun_mulai_indikasi(con, him):
+    """Jam indikasi (25 Sep 2026): PERPANJANGAN = tahun_izin − 20, selainnya tahun_izin,
+    NULL tanpa tahun; jangkar minerba = T41C (378 aktif ≤2001, 808 ≤2024)."""
+    beda = con.execute("""
+        SELECT COUNT(*) FROM izin_klasifikasi z JOIN konsesi k USING (kode_wiup)
+        WHERE (k.tahun_izin IS NULL AND z.tahun_mulai_indikasi IS NOT NULL)
+           OR (k.tahun_izin IS NOT NULL AND z.tahun_mulai_indikasi IS NULL)
+           OR (z.kelas = 'PERPANJANGAN' AND z.tahun_mulai_indikasi <> k.tahun_izin - 20)
+           OR (z.kelas <> 'PERPANJANGAN' AND k.tahun_izin IS NOT NULL
+               AND z.tahun_mulai_indikasi <> k.tahun_izin)""").fetchone()[0]
+    assert beda == 0
+    if him == "minerba":
+        a01, a24 = (con.execute(
+            "SELECT COUNT(*) FROM izin_klasifikasi WHERE tahun_mulai_indikasi <= ?", (y,)).fetchone()[0]
+            for y in (2001, 2024))
+        assert (a01, a24) == (378, 808)
+
+
 def test_meta_dua_arah_kosong(con):
     assert cakupan_dua_arah(con) == []
     assert con.execute("SELECT COUNT(*) FROM analysis_meta WHERE lisensi='' OR metode='' OR sumber=''").fetchone()[0] == 0
